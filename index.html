@@ -1,0 +1,2356 @@
+<!DOCTYPE html>
+<!--
+  3D 성형 시뮬레이터 — 데모
+
+  [실행 방법]
+    이 폴더에서:  python3 -m http.server 8000
+    브라우저에서:  http://localhost:8000
+    (사진 업로드만 쓸 경우 file:// 로도 열리지만, 카메라 촬영은 localhost 필요)
+
+  [사용 라이브러리]
+    - MediaPipe Tasks Vision (Apache-2.0) : 얼굴 랜드마크 478개
+    - three.js (MIT)                     : 3D 렌더링
+    둘 다 상업적 사용 가능. 사진은 브라우저 안에서만 처리되며 서버로 전송되지 않습니다.
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>3D 성형 시뮬레이터 — 데모</title>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.171.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/"
+  }
+}
+</script>
+
+<style>
+  :root {
+    --bg: #0e1013;
+    --panel: #171b21;
+    --line: #262d36;
+    --text: #e6e9ee;
+    --dim: #8b95a3;
+    --accent: #4da3ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", sans-serif;
+    display: flex;
+  }
+
+  /* ───────── 3D 뷰 ───────── */
+  #stage { flex: 1; position: relative; min-width: 0; }
+  #stage canvas { display: block; }
+
+  #status {
+    position: absolute; top: 16px; left: 16px; z-index: 5;
+    background: rgba(0,0,0,.65); border: 1px solid var(--line);
+    padding: 8px 12px; border-radius: 8px; font-size: 13px; max-width: 70%;
+    white-space: pre-line;
+  }
+  #status.error { border-color: #d05050; color: #ff9b9b; }
+  #status.hidden { display: none; }
+
+  #disclaimer {
+    position: absolute; bottom: 14px; right: 16px; z-index: 5;
+    font-size: 11px; color: var(--dim); text-align: right; line-height: 1.55;
+    max-width: 330px; pointer-events: none;
+  }
+
+  /* ───────── 시작 화면 ───────── */
+  #start {
+    position: absolute; inset: 0; z-index: 20;
+    background: var(--bg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 22px; padding: 32px;
+  }
+  #start.hidden { display: none; }
+  #start h2 { margin: 0; font-size: 20px; letter-spacing: -.3px; }
+  #start p { margin: 0; font-size: 13px; color: var(--dim); text-align: center; line-height: 1.7; }
+
+  #drop {
+    width: min(460px, 100%); padding: 44px 24px;
+    border: 1.5px dashed var(--line); border-radius: 14px;
+    text-align: center; cursor: pointer; transition: .15s;
+    background: #12151a;
+  }
+  #drop:hover, #drop.over { border-color: var(--accent); background: #141b25; }
+  #drop .big { font-size: 15px; margin-bottom: 6px; }
+  #drop .small { font-size: 12px; color: var(--dim); }
+
+  /* ───────── 카메라 모달 ───────── */
+  #camModal {
+    position: absolute; inset: 0; z-index: 30;
+    background: rgba(6,8,11,.94);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  }
+  #camModal.hidden { display: none; }
+  #camVideo {
+    max-width: min(680px, 90%); max-height: 62vh;
+    border-radius: 12px; border: 1px solid var(--line); background: #000;
+  }
+  #camGuide { font-size: 12px; color: var(--dim); }
+
+  /* ───────── 패널 ───────── */
+  #panel {
+    width: 322px; flex: none; background: var(--panel);
+    border-left: 1px solid var(--line); padding: 18px; overflow-y: auto;
+  }
+  h1 { font-size: 15px; margin: 0 0 4px; letter-spacing: -.2px; }
+  .sub { font-size: 11px; color: var(--dim); margin-bottom: 18px; }
+
+  .group { margin-bottom: 18px; }
+  .group > .title {
+    font-size: 11px; color: var(--dim); text-transform: uppercase;
+    letter-spacing: .6px; margin-bottom: 8px;
+  }
+
+  button {
+    font: inherit; font-size: 13px; color: var(--text);
+    background: #222932; border: 1px solid var(--line);
+    padding: 9px 12px; border-radius: 7px; cursor: pointer; width: 100%;
+  }
+  button:hover:not(:disabled) { background: #2b333e; }
+  button:disabled { opacity: .38; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: #6fb5ff; }
+  .row { display: flex; gap: 8px; }
+  .row > button { width: auto; flex: 1; }
+
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: transparent; padding: 7px 0; font-size: 12px; }
+  .seg button.on { background: var(--accent); color: #06121f; font-weight: 600; }
+
+  .op { margin-bottom: 13px; opacity: .32; pointer-events: none; transition: opacity .15s; }
+  .op.enabled { opacity: 1; pointer-events: auto; }
+  .op label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12px; margin-bottom: 5px; gap: 6px;
+  }
+  .op .name { display: flex; align-items: center; gap: 5px; }
+  .op .tag {
+    font-size: 9px; color: var(--dim); border: 1px solid var(--line);
+    border-radius: 3px; padding: 1px 4px; letter-spacing: .3px;
+  }
+  .op .val { font-size: 11px; color: var(--accent); font-variant-numeric: tabular-nums; flex: none; }
+  .op .val.zero { color: var(--dim); }
+  input[type=range] { width: 100%; margin: 0; accent-color: var(--accent); }
+  /* 슬라이더 아래 파생 수치 — 시술량 ↔ 표면 변화 환산 */
+  .op .der { font-size: 10px; color: var(--dim); margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .op .der.hidden { display: none; }
+
+  #readout {
+    border: 1px solid var(--line); border-radius: 8px; padding: 11px;
+    font-size: 11px; line-height: 1.75; color: var(--dim); min-height: 42px;
+  }
+  #readout b { color: var(--text); font-weight: 600; }
+
+  /* 수술 계획서 항목 */
+  .plan { border-bottom: 1px solid var(--line); padding-bottom: 7px; margin-bottom: 7px; }
+  .plan:last-of-type { border-bottom: 0; padding-bottom: 0; margin-bottom: 0; }
+  .plan .ph { color: var(--text); display: flex; align-items: baseline; gap: 5px; }
+  .plan .pl {
+    font-size: 9px; color: var(--dim); border: 1px solid var(--line);
+    border-radius: 3px; padding: 1px 4px; flex: none;
+  }
+  .plan .pm { color: var(--accent); font-variant-numeric: tabular-nums; }
+  .plan .pd { color: var(--dim); font-size: 10px; line-height: 1.6; }
+
+  /* 규제 대응 고지 — 항상 표시 */
+  #notice {
+    margin-top: 10px; padding: 8px 9px; border-radius: 6px;
+    background: #241c12; border: 1px solid #4a3a22;
+    color: #e3ceac; font-size: 10px; line-height: 1.7;
+  }
+  #notice b { color: #ffd79a; }
+
+  /* 부위별 레이어 두께 */
+  #thick { margin-top: 10px; font-size: 10.5px; color: var(--dim); line-height: 1.7; }
+  #thick.hidden { display: none; }
+  #thick .tn { color: var(--text); }
+  #thickBar { display: flex; height: 10px; border-radius: 3px; overflow: hidden; margin: 5px 0; }
+  #thickBar div { height: 100%; }
+
+  .hint { font-size: 10.5px; color: var(--dim); line-height: 1.6; margin-top: 7px; }
+
+  /* 해부 계측점 편집 */
+  #anchors { margin-top: 9px; }
+  #anchors .ahead {
+    font-size: 10px; color: var(--dim); text-transform: uppercase;
+    letter-spacing: .5px; margin: 9px 0 4px;
+  }
+  #anchors .arow {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 5px; border-radius: 5px; cursor: pointer;
+  }
+  #anchors .arow:hover { background: #222932; }
+  #anchors .arow.on { background: #1d2c3d; }
+  #anchors .ako { font-size: 11.5px; flex: none; width: 74px; }
+  #anchors .acr {
+    font-size: 9.5px; color: var(--dim); flex: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #anchors .anb { font-size: 9.5px; color: #d9a15c; flex: none; }
+  #anchors input {
+    font: inherit; font-size: 11.5px; width: 48px; flex: none; text-align: right;
+    color: var(--text); background: #1a1f26;
+    border: 1px solid var(--line); border-radius: 5px; padding: 3px 5px;
+  }
+  #anchors input:focus { outline: 0; border-color: var(--accent); }
+  #anchors input.edited { color: #7ec8ff; border-color: #35506e; }
+
+  /* 부위 범례 */
+  #legend { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+  #legend .chip {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 11px; padding: 4px 8px 4px 6px;
+    border: 1px solid var(--line); border-radius: 20px;
+    cursor: pointer; user-select: none; transition: .12s;
+  }
+  #legend .chip:hover { background: #222932; }
+  #legend .chip.dim { opacity: .38; }
+  #legend .chip .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  #legend .chip .n { color: var(--dim); font-size: 9.5px; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="status" class="hidden"></div>
+  <div id="disclaimer">
+    해부학 참조 기반 <b>추정 시각화</b>입니다. 실제 수술 결과와 다를 수 있으며,<br>
+    시술 판단은 의료진에게 있습니다. 사진은 서버로 전송되지 않습니다.<br>
+    <span id="dcSource">레이어 두께는 문헌 계측점(FSTT) 평균이며 개인 CT 계측이 아닙니다.</span><br>
+    골격은 <b>성형 대상 뼈만</b> 추정 배치한 것으로 두개골 모델이 아닙니다.<br>
+    표면에서 뼈를 예측하는 최고 문헌값도 평균오차 2.46mm (3D 스캔 · 209명 CT
+    기반 통계형상모델)로 임상 허용 오차 1.5mm 에 미달합니다. 사진 1장 기반인
+    이 데모의 오차는 그보다 큽니다.
+  </div>
+
+  <!-- 시작 화면 -->
+  <div id="start">
+    <h2>3D 성형 시뮬레이터</h2>
+    <p>정면 얼굴 사진을 올리면 3D 디지털 트윈을 생성합니다.<br>
+       사진은 이 브라우저 안에서만 처리되며 어디에도 전송되지 않습니다.</p>
+
+    <div id="drop">
+      <div class="big">사진 선택 또는 여기로 드래그</div>
+      <div class="small">JPG · PNG · 정면, 밝은 조명, 머리 전체가 보이는 사진 권장</div>
+    </div>
+    <input type="file" id="file" accept="image/*" hidden />
+
+    <div style="width:min(460px,100%)">
+      <button id="btnOpenCam">카메라로 촬영하기</button>
+      <div class="hint" style="text-align:center">누를 때만 카메라 권한을 요청합니다.</div>
+    </div>
+  </div>
+
+  <!-- 카메라 모달 -->
+  <div id="camModal" class="hidden">
+    <video id="camVideo" autoplay playsinline muted></video>
+    <div id="camGuide">얼굴을 화면 중앙에 두고 정면을 봐주세요.</div>
+    <div style="display:flex; gap:10px; width:min(360px,90%)">
+      <button id="btnShoot" class="primary">촬영</button>
+      <button id="btnCamCancel">취소</button>
+    </div>
+  </div>
+</div>
+
+<div id="panel">
+  <h1>3D 성형 시뮬레이터</h1>
+  <div class="sub">디지털 트윈 상담 데모</div>
+
+  <div class="group">
+    <div class="title">보기 모드</div>
+    <div class="seg" id="segView">
+      <button data-view="photo" class="on">사진</button>
+      <button data-view="model">3D 모델</button>
+    </div>
+    <div class="hint" id="viewHint">원본 사진 전체가 함께 변형됩니다. 환자에게 보여주는 화면.</div>
+  </div>
+
+  <div class="group" id="matGroup" style="display:none">
+    <div class="title">표면 표시</div>
+    <div class="seg" id="segMat">
+      <button data-mat="photo" class="on">사진</button>
+      <button data-mat="shade">음영</button>
+      <button data-mat="wire">와이어</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="title">1. 부위 인식</div>
+    <div class="row">
+      <button id="tgLines" class="primary" disabled>경계선</button>
+      <button id="tgPoints" disabled>점</button>
+      <button id="tgRegion" disabled>면 채우기</button>
+    </div>
+    <div id="detectInfo" class="hint">사진을 올리면 부위를 자동 분류합니다.</div>
+    <div id="legend"></div>
+    <div id="thick" class="hidden"></div>
+  </div>
+
+  <div class="group">
+    <div class="title">2. 해부 레이어 (껍질 벗기기)</div>
+    <div class="seg" id="segPeel">
+      <button data-peel="surface" class="on">표면</button>
+      <button data-peel="skin">피부</button>
+      <button data-peel="fat">지방</button>
+      <button data-peel="smas">근육</button>
+      <button data-peel="bone">골격</button>
+    </div>
+    <div class="hint" id="peelHint">계측점 두께만큼 표면을 안쪽으로 밀어 만든 <b>추정 레이어</b>입니다. 3D 모델 뷰에서만 보입니다.</div>
+  </div>
+
+  <div class="group">
+    <div class="title">3. 해부 계측점 (FSTT)</div>
+    <div class="hint">
+      표면 → 아래 구조까지의 거리(mm). 환자 계측값이 있으면 덮어쓰십시오.
+      좌우는 <b>한 값을 양쪽에</b> 적용합니다.<br>
+      <b>행을 눌러 마커로 위치를 먼저 확인</b>하세요 — 값보다 랜드마크 인덱스가 더 큰 오차원입니다.
+    </div>
+    <div id="anchors"></div>
+    <div class="row" style="margin-top:8px">
+      <button id="btnAnchorReset">기본값 복원</button>
+      <button id="btnAnchorCopy">JSON 복사</button>
+    </div>
+    <div class="hint" id="anchorHint"></div>
+  </div>
+
+  <div class="group">
+    <div class="title">4. 시술 시뮬레이션</div>
+    <div class="seg" id="segDir">
+      <button data-inv="0" class="on">시술량 → 표면</button>
+      <button data-inv="1">표면 → 시술량</button>
+    </div>
+    <div class="hint" id="dirHint"></div>
+    <div style="height:10px"></div>
+    <div id="ops"></div>
+  </div>
+
+  <div class="group">
+    <div class="title">의사용 — 수술 계획서 (후보)</div>
+    <div id="readout">사진을 먼저 올려주세요.</div>
+  </div>
+
+  <div class="group">
+    <button id="btnBefore" disabled>원본 보기 (누르고 있기)</button>
+    <div style="height:8px"></div>
+    <div class="row">
+      <button id="btnReset" disabled>리셋</button>
+      <button id="btnSave" disabled>PNG 저장</button>
+    </div>
+    <div style="height:8px"></div>
+    <button id="btnNew" disabled>다른 사진</button>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { FaceLandmarker, FilesetResolver }
+  from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/vision_bundle.mjs';
+
+/* ══════════════════════════════════════════════════════════════
+   설정
+   ══════════════════════════════════════════════════════════════ */
+
+const NUM_LM = 478;           // MediaPipe 랜드마크 수 (468 얼굴 + 10 홍채)
+const REF_H = 4;              // 이미지 높이에 대응하는 월드 단위
+const BIZYGOMATIC_MM = 140;   // 평균 관골간 폭(mm) — mm 환산 기준
+const MAX_PX = 1600;          // 입력 이미지 최대 변 길이
+const GRID = 110;             // 배경 사진 격자 분할 수
+const BACKDROP_Z = -1.2;      // 배경 평면 깊이
+const DEPTH_GAIN = 1.9;       // MediaPipe z 진폭 보정 (원값 그대로 쓰면 가면처럼 납작함)
+
+const LM_FACE_L = 234, LM_FACE_R = 454;   // 얼굴 좌/우 외곽 (폭 측정용)
+
+/*
+  시술 정의
+
+  중요: 슬라이더 값은 "표면 변화량"이 아니라 "시술량"(보형물 삽입 두께·절골량)입니다.
+  표면에 실제로 나타나는 변화는 그 위를 덮은 연조직이 흡수하므로 항상 시술량보다
+  작습니다. 그 비율이 ratio(연조직 반영률)입니다. 이 구분이 이 도구의 핵심이며,
+  표면만 조각하는 사진 보정 도구와 갈라지는 지점입니다.
+
+    anchors : 변형 중심 랜드마크
+    mode    : 'push'     — dir 방향으로 밀어냄 (보형물·필러 = 볼륨 추가)
+              'contract' — 얼굴 중심선 쪽으로 당김 (절골·축소)
+    dir     : 월드 방향. +z = 앞으로 돌출, -y = 아래로
+    sigma   : 영향 반경 (얼굴 폭 대비 비율) — 가우시안 감쇠
+    mmMax   : 슬라이더 최대치의 시술량 (mm)
+    depth   : true = 깊이(전후) 변화가 주 효과 → 정면 사진에서는 거의 안 보임
+    frontal : 정면 2D 에서 대체할 부수 효과 (깊이 시술은 정면에서 z 가 안 보이므로)
+    layer   : 시술이 실제로 가해지는 층
+    ratio   : 연조직 반영률 — 표면 변화 = 시술량 × ratio (문헌 참조 추정치)
+    seg     : 이 시술이 건드리는 뼈 세그먼트 id (BONE_SEGMENTS). 슬라이더를 잡으면
+              골격 층에서 그 뼈가 강조되고 계획서에 뼈 이름이 나옵니다.
+              연골·연조직 시술(코끝·콧볼)에는 없습니다.
+    note    : 계획서 표제
+    plan    : 계획서 상세 (재료 / 접근 / 회복 / 리스크)
+*/
+const OPS = [
+  { id:'bridge',   label:'콧대 높이',   anchors:[6],       mode:'push',     dir:[0,0,1],  sigma:0.20, mmMax:6, depth:true,
+    frontal:{ mode:'contract',               k:0.35 },     // 콧대가 높아지면 정면에서 콧대 폭이 좁아 보임
+    layer:'periosteum', ratio:0.95, note:'비배부 보형물', seg:['nasal'],
+    plan:{ material:'실리콘 I자 / 고어텍스 / 자가늑연골', approach:'비내 절개 · 비배부 골막하 삽입',
+           recovery:'부종 2주 · 완성 3~6개월', risk:'구축 · 변위 · 감염 · 보형물 윤곽 노출' } },
+
+  { id:'tip',      label:'코끝 돌출',   anchors:[1],       mode:'push',     dir:[0,0,1],  sigma:0.13, mmMax:5, depth:true,
+    frontal:{ mode:'push',     dir:[0,-1,0], k:0.35 },     // 코가 살짝 길어 보임
+    layer:'cartilage', ratio:0.90, note:'비첨 연장 (연골 이식)',   // 연골 — 대응 뼈 세그먼트 없음
+    plan:{ material:'자가 비중격 / 이개 연골 (shield · 지주)', approach:'개방 또는 비내 절개 · 비첨 연골 재배치',
+           recovery:'부종 3주 · 완성 6~12개월', risk:'연골 흡수 · 비대칭 · 피부 얇아짐' } },
+
+  { id:'alar',     label:'콧볼 축소',   anchors:[98,327],  mode:'contract',               sigma:0.11, mmMax:4,
+    layer:'skin', ratio:1.00, note:'비익 축소 (절제)',            // 연조직
+    plan:{ material:'없음 — 피부·연부조직 절제', approach:'비익 기저부 절개 · 쐐기 절제',
+           recovery:'부종 1~2주 · 완성 2~3개월', risk:'흉터 · 비공 비대칭 · 재발' } },
+
+  { id:'chinFwd',  label:'턱끝 전진',   anchors:[152],     mode:'push',     dir:[0,0,1],  sigma:0.24, mmMax:8, depth:true,
+    frontal:{ mode:'push',     dir:[0,-1,0], k:0.30 },     // 턱끝이 살짝 내려와 보임
+    layer:'periosteum', ratio:0.90, note:'턱끝 보형물 / 전진 이부성형', seg:['mentum'],
+    plan:{ material:'실리콘·메드포어 보형물 또는 활강 이부성형(절골 전진)', approach:'구강내 절개 · 골막하',
+           recovery:'부종 3주 · 완성 3~6개월', risk:'골 흡수 · 하치조신경 감각저하 · 변위' } },
+
+  { id:'chinDn',   label:'턱끝 길이',   anchors:[152],     mode:'push',     dir:[0,-1,0], sigma:0.24, mmMax:8,
+    layer:'bone', ratio:0.85, note:'턱끝 수직 연장 이부성형', seg:['mentum'],
+    plan:{ material:'절골 후 간격 유지 — 자가골·인공골 이식', approach:'구강내 절개 · 하악 이부 수평 절골',
+           recovery:'부종 4주 · 완성 6개월', risk:'골 미융합 · 신경 손상 · 하순 하강' } },
+
+  { id:'cheek',    label:'광대 축소',   anchors:[234,454], mode:'contract',               sigma:0.22, mmMax:6,
+    layer:'bone', ratio:0.75, note:'광대 축소 절골', seg:['zygomaBody','zygomaArch'],
+    plan:{ material:'없음 — 관골체·관골궁 절골 후 내측 이동·고정', approach:'구강내 + 이전측두 절개 · 금속판 고정',
+           recovery:'부종 4~6주 · 완성 6개월', risk:'연조직 처짐 · 좌우 비대칭 · 골 미융합' } },
+
+  { id:'jaw',      label:'사각턱 축소', anchors:[172,397], mode:'contract',               sigma:0.22, mmMax:8,
+    layer:'bone', ratio:0.55, note:'하악각 절골 (+ 교근 축소)', seg:['gonialAngle','ramus'],
+    plan:{ material:'없음 — 하악각 곡선 절골 · 외측 피질골 절제', approach:'구강내 절개',
+           recovery:'부종 6주 · 완성 6~12개월', risk:'교근 두께가 커 표면 반영 낮음 · 신경 손상 · 볼처짐' } },
+
+  { id:'forehead', label:'이마 볼륨',   anchors:[10],      mode:'push',     dir:[0,0,1],  sigma:0.30, mmMax:5, depth:true,
+    frontal:{ mode:'contract',               k:-0.20 },    // 음수 = 바깥으로 확장 (이마가 넓어 보임)
+    layer:'fat', ratio:0.90, note:'이마 볼륨 (필러 / 지방이식)', seg:['frontal'],
+    plan:{ material:'HA 필러 기준. 자가지방이식은 생착률 약 45% → 주입량 약 2배 필요',
+           approach:'피하 또는 골막상 주입', recovery:'부종 1주 · 완성 1~3개월',
+           risk:'혈관 폐색(실명 보고) · 불균일 · 흡수로 인한 재시술' } },
+];
+
+// layer 코드 → 화면 표기
+const LAYER_LABEL = {
+  skin:'피부층', fat:'지방층', cartilage:'연골', periosteum:'골막상', bone:'골격',
+};
+// layer 별 "시술량" 의 의미 (계획서 문구)
+const PROC_LABEL = {
+  skin:'절제', fat:'주입', cartilage:'이식', periosteum:'삽입', bone:'절골·이동',
+};
+
+/*
+  부위 정의 — 468개 정점을 해부학적 부위로 분류합니다.
+
+  두 가지 방식을 섞습니다.
+    builtin : MediaPipe 가 제공하는 공식 연결 집합. 눈·눈썹·입술·홍채는
+              정확한 정점 목록이 정의되어 있으므로 그대로 사용합니다 (우선 배정).
+    seeds   : 코·광대·턱선처럼 공식 집합이 없는 부위. 대표 랜드마크를 씨앗으로
+              두고, 남은 정점을 가장 가까운 씨앗에 배정합니다 (최근접 분할).
+
+  씨앗 인덱스는 시각적으로 확인하며 조정하는 값입니다. 화면에서 경계가
+  어긋나 보이면 해당 부위의 seeds 를 늘리거나 옮기면 됩니다.
+*/
+const REGION_DEFS = [
+  // ── 공식 집합 (정확) ──
+  // 홍채 정점(468~477)은 테셀레이션 삼각형에 포함되지 않아 면·경계선으로는 보이지 않습니다.
+  { id:'iris',  label:'홍채',   color:0x8be9fd, pointsOnly:true, builtin:['FACE_LANDMARKS_LEFT_IRIS','FACE_LANDMARKS_RIGHT_IRIS'] },
+  { id:'eye',   label:'눈',     color:0x4da3ff, builtin:['FACE_LANDMARKS_LEFT_EYE','FACE_LANDMARKS_RIGHT_EYE'] },
+  { id:'brow',  label:'눈썹',   color:0x9b7bff, builtin:['FACE_LANDMARKS_LEFT_EYEBROW','FACE_LANDMARKS_RIGHT_EYEBROW'] },
+  { id:'lips',  label:'입술',   color:0xff5f7e, builtin:['FACE_LANDMARKS_LIPS'] },
+
+  // ── 씨앗 기반 (조정 가능) ──
+  { id:'nose',      label:'코',       color:0xffb84d, seeds:[168,6,197,195,5,4,1,2,98,327] },
+  { id:'philtrum',  label:'인중',     color:0xffd9a0, seeds:[164] },
+  { id:'chin',      label:'턱끝',     color:0x4de0a0, seeds:[152,175,199,200,18] },
+  { id:'jaw',       label:'턱선',     color:0x2fb98a, seeds:[172,397,58,288,132,361] },
+  { id:'cheekbone', label:'광대',     color:0xff8a4d, seeds:[116,345,123,352] },
+  { id:'cheek',     label:'볼',       color:0xd98b6b, seeds:[205,425,50,280] },
+  { id:'temple',    label:'관자놀이', color:0x7f8fa6, seeds:[127,356,21,251] },
+  { id:'forehead',  label:'이마',     color:0xc0c6d0, seeds:[10,151,9,108,337,67,297] },
+];
+
+/*
+  ANCHORS — 안면 계측점(craniometric landmark)별 조직 두께, 단위 mm.
+
+  이전에는 12개 부위마다 상수 하나를 주었지만, FSTT(Facial Soft Tissue
+  Thickness) 문헌은 애초에 부위가 아니라 계측점 단위로 발표됩니다. 같은 "볼"
+  안에서도 zygion 은 6.5mm, supra-M2 는 22mm 입니다. 부위 상수로는 이 공간
+  변화를 표현할 수 없어 골격 층이 뭉개졌습니다.
+
+  값은 하나입니다.
+    t : 표면 → 그 아래 구조까지의 거리.
+        뼈가 있으면 곧 FSTT 값이고, noBone 인 곳은 표면 → 안구·비강·치아 거리.
+
+  이전 코드는 안와에 bone:24 를 넣어 "없는 뼈를 24mm 깊이에" 그렸습니다.
+  안와·비강·구강·협부·측두와에는 뼈가 없습니다. noBone 으로 표시해 골격 층에서
+  아예 비웁니다 — 그 비움이 두개골 형태를 만듭니다.
+
+  출처: 법의학 안면복원 문헌(Stephan & Simpson 메타분석, De Greef 등)의
+  성인 평균 근사치. 개인 CT 계측이 아닙니다.
+
+  주의: 값보다 lm 인덱스가 더 큰 오차원입니다. 계측점 패널에서 행을 눌러
+  마커 위치를 눈으로 확인한 뒤에 값을 손대는 순서로 진행하십시오.
+*/
+const ANCHORS = [
+  // ── 정중선 ──
+  { id:'supraglabella', ko:'미간 위',    cr:'supraglabella', lm:151, t: 4.5 },
+  { id:'glabella',      ko:'미간',       cr:'glabella',      lm:  9, t: 5.5 },
+  { id:'nasion',        ko:'코뿌리',     cr:'nasion',        lm:168, t: 6.5 },
+  { id:'nasaleUp',      ko:'콧대 상부',  cr:'mid-nasal',     lm:  6, t: 4.0 },
+  { id:'rhinion',       ko:'비골 끝',    cr:'rhinion',       lm:195, t: 3.0 },
+  { id:'pronasale',     ko:'코끝',       cr:'pronasale',     lm:  1, t: 2.5, noBone:true },  // 연골
+  { id:'acanthion',     ko:'코 밑',      cr:'subnasale',     lm:  2, t:12.0 },
+  { id:'philtrum',      ko:'인중',       cr:'mid-philtrum',  lm:164, t:11.0 },
+  { id:'labSup',        ko:'윗입술',     cr:'labiale sup.',  lm:  0, t:12.5 },
+  { id:'labInf',        ko:'아랫입술',   cr:'labiale inf.',  lm: 17, t:13.5 },
+  { id:'supramentale',  ko:'턱 오목',    cr:'supramentale',  lm: 18, t:11.0 },
+  { id:'pogonion',      ko:'턱끝점',     cr:'pogonion',      lm:199, t:11.0 },
+  { id:'gnathion',      ko:'턱끝 하단',  cr:'gnathion',      lm:152, t: 7.0 },
+
+  // ── 좌우 (대칭 · 한 값을 양쪽에 적용) ──
+  { id:'frontalLat',    ko:'이마 외측',    cr:'frontal em.',  lm:[ 67,297], t: 4.5 },
+  { id:'supraorbital',  ko:'안와 상연',    cr:'supraorbital', lm:[105,334], t: 6.5 },
+  { id:'orbitLat',      ko:'안와 외측연',  cr:'lat. orbit',   lm:[226,446], t: 6.0 },
+  { id:'infraorbital',  ko:'안와 하연',    cr:'infraorbital', lm:[119,350], t: 7.5 },
+  { id:'eyelid',        ko:'눈꺼풀',       cr:'—',            lm:[159,386], t: 2.0, noBone:true },  // 안와
+  { id:'zygomaBody',    ko:'광대 앞',      cr:'zygo. prom.',  lm:[116,345], t:10.0 },
+  { id:'zygion',        ko:'광대 최외측',  cr:'zygion',       lm:[234,454], t: 6.5 },
+  { id:'archMid',       ko:'관골궁 중간',  cr:'zygo. arch',   lm:[127,356], t: 6.0 },
+  { id:'temple',        ko:'관자놀이',     cr:'temporal',     lm:[ 21,251], t: 7.0, noBone:true },  // 측두와
+  { id:'supraCanine',   ko:'견치 위',      cr:'supra-canine', lm:[129,358], t:10.0 },
+  { id:'buccal',        ko:'볼 중앙',      cr:'supra-M2',     lm:[205,425], t:22.0, noBone:true },  // 협부
+  { id:'ramus',         ko:'하악지',       cr:'mid-ramus',    lm:[132,361], t:15.0 },
+  { id:'gonion',        ko:'하악각',       cr:'gonion',       lm:[172,397], t:12.5 },
+  { id:'mandBody',      ko:'하악체',       cr:'mid-mandible', lm:[149,378], t:10.0 },
+];
+
+/** 계측점의 랜드마크 인덱스를 항상 배열로. 정중선은 1개, 좌우는 2개. */
+const anchorLms = a => Array.isArray(a.lm) ? a.lm : [a.lm];
+
+/*
+  사용자가 고친 계측값. { 계측점id: mm }.
+
+  문헌 기본값을 덮어씁니다 — 환자 CT·초음파 계측값이 있으면 그게 문헌 평균보다
+  항상 정확하기 때문입니다. 사진과 무관한 값이므로 사진을 바꿔도 유지하고
+  localStorage 에 남깁니다.
+
+  가드가 필요한 이유: 입력칸을 비우면 '' → Number('') = 0 이 아니라 parseFloat 는
+  NaN 을 냅니다. NaN 두께 → NaN position → computeBoundingSphere() 가 radius NaN
+  경고를 내며 메쉬가 통째로 사라집니다. 화면만 보면 원인을 찾을 수 없으므로
+  값을 읽는 지점에서 막습니다.
+*/
+const ANCHOR_STORE_KEY = 'faceAnchors.v1';
+const T_MIN_MM = 0.5, T_MAX_MM = 40;
+let anchorOverride = {};
+
+const clampT = v => Math.min(T_MAX_MM, Math.max(T_MIN_MM, v));
+
+function loadOverrides() {
+  try {
+    const raw = localStorage.getItem(ANCHOR_STORE_KEY);
+    const obj = raw ? JSON.parse(raw) : {};
+    anchorOverride = {};
+    for (const a of ANCHORS) {
+      const v = parseFloat(obj[a.id]);
+      if (Number.isFinite(v)) anchorOverride[a.id] = clampT(v);
+    }
+  } catch { anchorOverride = {}; }
+}
+
+function saveOverrides() {
+  try { localStorage.setItem(ANCHOR_STORE_KEY, JSON.stringify(anchorOverride)); }
+  catch { /* 시크릿 모드 등 — 저장 실패해도 동작은 계속 */ }
+}
+
+/** 계측점의 유효 두께(mm). 사용자 입력이 있으면 그 값, 없으면 문헌 기본값. */
+function anchorVal(a) {
+  const v = anchorOverride[a.id];
+  return Number.isFinite(v) ? v : a.t;
+}
+
+/*
+  해부 레이어 — 표면에서 안쪽 순서. depth(t) 는 그 층의 하단면 깊이(mm).
+  피부는 부위에 관계없이 얇으므로(1.5~2mm) 상한을 둡니다.
+  근육 층 하단은 뼈 바로 위(골막)까지이므로 t 에서 0.5mm 만 뺍니다.
+*/
+const SKIN_MAX_MM = 1.8;
+const skinDepth = t => Math.min(SKIN_MAX_MM, t * 0.25);
+
+const LAYERS = [
+  { id:'skin', label:'피부', color:0xE8C0A8, depth: t => skinDepth(t) },
+  { id:'fat',  label:'지방', color:0xF2D65C, depth: t => { const k = skinDepth(t); return k + (t - k) * 0.55; } },
+  { id:'smas', label:'근육', color:0xC0392B, depth: t => Math.max(skinDepth(t), t - 0.5) },
+  { id:'bone', label:'골격', color:0xEDE7D9, depth: t => t, segmented:true },
+];
+
+const BONE_LI = LAYERS.findIndex(L => L.segmented);
+
+/*
+  ── 골격은 세그먼트, 연조직은 오프셋 ──────────────────────────
+
+  피부·지방·근육은 얼굴을 덮는 "연속된 면"이므로 표면을 안쪽으로 밀어 만드는
+  오프셋이 타당한 근사입니다. 뼈는 다릅니다. 두개골에는 구멍(안와·비강·구강)과
+  다리 구조(관골궁)와 날카로운 능선이 있습니다. 닫힌 면을 안으로 밀면 언제나
+  "작아진 얼굴"이 나올 뿐 두개골이 되지 않습니다.
+
+  그래서 골격 층만 성형 대상 뼈 11개 세그먼트로 쪼개고, 뼈가 없는 곳은 아예
+  비웁니다. 세그먼트마다 삼각형 인덱스를 따로 걸러내므로 경계에 자유 엣지가
+  생기고, 그 자유 엣지가 뼈 능선으로 보입니다.
+
+  판정 컨텍스트 c:
+    c.reg        그 정점의 부위 id ('nose' | 'jaw' | …)
+    c.ax         정중선에서의 좌우 거리, 얼굴 반폭으로 정규화 (0=정중선, 1=끝)
+    c.y          월드 y
+    c.yOf(lm)    랜드마크 lm 의 y — "rhinion 위/아래" 처럼 해부학 기준으로 씀
+  좌표를 직접 쓰지 않고 랜드마크 기준으로 비교하므로 얼굴 크기·비율이 달라도
+  같은 해부학적 위치에서 갈립니다.
+*/
+
+/** 입술 안쪽 링 — 구강 개구부. 공식 LIPS 집합은 안·바깥을 모두 포함하므로 따로 씁니다. */
+const INNER_LIPS = [
+  78, 95, 88, 178, 87, 14, 317, 402, 318, 324,
+  308, 415, 310, 311, 312, 13, 82, 81, 80, 191,
+];
+
+/** 뼈가 없는 곳. 세그먼트보다 먼저 판정하며, 여기 속한 정점은 골격 층에서 빠집니다. */
+const VOID_DEFS = [
+  { id:'orbit',    ko:'안와',   why:'안구가 들어가는 빈 공간',
+    pick: c => c.reg === 'eye' || c.reg === 'iris' },
+  { id:'piriform', ko:'비강',   why:'비골(rhinion) 아래는 뼈가 아니라 연골과 개구부',
+    pick: c => c.reg === 'nose' && c.y > c.yOf(2) && c.y < c.yOf(195) },
+  { id:'oral',     ko:'구강',   why:'치아 사이 개구부',
+    verts: INNER_LIPS },
+  { id:'buccal',   ko:'협부',   why:'뼈가 표면에서 20mm 넘게 떨어져 있고 골격 성형 대상이 아님',
+    pick: c => c.reg === 'cheek' && c.ax > 0.60 },
+  { id:'temporal', ko:'측두와', why:'관골궁 뒤 함몰부. 측두근이 채우는 공간',
+    pick: c => c.reg === 'temple' && c.y > c.yOf(226) },
+];
+
+/** 하악이 덮는 영역 — 턱선 + 치조연(입꼬리) 아래의 볼. */
+const MAND = c => c.reg === 'jaw' || (c.reg === 'cheek' && c.y <= c.yOf(61));
+
+/** 성형으로 접근하는 뼈만. 위에서 아래 순서로 첫 일치를 씁니다. */
+const BONE_SEGMENTS = [
+  { id:'frontal',      ko:'전두골',   op:'이마 윤곽술',        color:0xEFE9DB,
+    pick: c => c.reg === 'forehead' },
+  { id:'supraorbital', ko:'안와상연', op:'눈썹뼈 삭제',        color:0xE6DECB,
+    pick: c => c.reg === 'brow' },
+  { id:'nasal',        ko:'비골',     op:'코 절골 · hump 삭제', color:0xF2EDE0,
+    pick: c => c.reg === 'nose' && c.y >= c.yOf(195) },
+  { id:'zygomaArch',   ko:'관골궁',   op:'광대 축소 (관골궁)',  color:0xDED4BE,
+    pick: c => (c.reg === 'cheekbone' && c.ax > 0.82) || c.reg === 'temple' },
+  { id:'zygomaBody',   ko:'관골체',   op:'광대 축소 (관골체)',  color:0xE9E0CC,
+    pick: c => c.reg === 'cheekbone' },
+  // 상악의 아래 한계는 치조연이고, 그 높이는 대략 입꼬리(랜드마크 61)입니다.
+  // 그보다 아래의 볼은 상악이 아니라 하악(교근이 덮은 하악지·하악체)입니다.
+  // 볼 전체를 상악에 주면 하악이 턱선 랜드마크 20개만 남아 삼각형이 거의 안 생깁니다.
+  { id:'maxilla',      ko:'상악',     op:'양악 · 돌출입',       color:0xEDE6D6,
+    pick: c => c.reg === 'philtrum'
+            || (c.reg === 'nose'  && c.y <= c.yOf(2))
+            || (c.reg === 'cheek' && c.y >  c.yOf(61)) },
+  { id:'alveolar',     ko:'치조골',   op:'돌출입 (전방분절)',   color:0xE2D9C4,
+    pick: c => c.reg === 'lips' },
+  // 하악은 턱선 + 입꼬리 아래 볼을 함께 씁니다. 위(귀 쪽)에서 아래(턱끝 쪽)로
+  // 하악지 → 하악각 → 하악체 순. 랜드마크 58 은 하악지가 하악각으로 꺾이기
+  // 시작하는 높이이고, 하악지·하악각은 하악체보다 뚜렷하게 외측에 있습니다.
+  { id:'ramus',        ko:'하악지',   op:'사각턱 (외측 피질골)', color:0xE7DFCB,
+    pick: c => MAND(c) && c.ax > 0.72 && c.y >= c.yOf(58) },
+  { id:'gonialAngle',  ko:'하악각',   op:'사각턱 (곡선 절골)',   color:0xDCD2BB,
+    pick: c => MAND(c) && c.ax > 0.70 },
+  { id:'mandBody',     ko:'하악체',   op:'하악 하연 절골',      color:0xEAE2CE,
+    pick: c => MAND(c) },
+  { id:'mentum',       ko:'이부',     op:'턱끝 전진 · 수직 연장', color:0xF0EADC,
+    pick: c => c.reg === 'chin' },
+];
+
+/** 조작 중인 시술의 대상 뼈 강조색. 뼈 기본색이 밝아 emissive 를 함께 씁니다. */
+const BONE_ACCENT    = 0x8fc4ff;
+const BONE_ACCENT_EM = 0x14324f;
+
+// 윤곽선으로 그릴 공식 연결 집합
+const CONTOUR_SETS = [
+  'FACE_LANDMARKS_FACE_OVAL',
+  'FACE_LANDMARKS_LIPS',
+  'FACE_LANDMARKS_LEFT_EYE',   'FACE_LANDMARKS_RIGHT_EYE',
+  'FACE_LANDMARKS_LEFT_EYEBROW','FACE_LANDMARKS_RIGHT_EYEBROW',
+  'FACE_LANDMARKS_LEFT_IRIS',  'FACE_LANDMARKS_RIGHT_IRIS',
+];
+
+/* ══════════════════════════════════════════════════════════════
+   상태
+   ══════════════════════════════════════════════════════════════ */
+
+const state = {
+  view: 'photo',        // 'photo' | 'model'
+  material: 'photo',
+  showBefore: false,    // 원본 보기 (변형 무시)
+  loaded: false,
+  amounts: {},          // op.id -> -1 ~ 1
+  aspect: 1,            // 이미지 가로/세로
+  faceW: 1,             // 얼굴 폭 (월드 단위)
+  mmPerUnit: 0,
+  backdropScale: 1,     // 배경 평면 보정 배율
+  center: null,         // 얼굴 중심 (3D 뷰 회전 기준점) — loadSource 에서 채움
+  showRegion: false,    // 부위 색상 면 채우기 (기본 off — 사진 위에 칠하면 화장처럼 보임)
+  showPoints: false,    // 랜드마크 점
+  showLines: true,      // 부위 경계선 (기본 표시 방식)
+  isolated: null,       // 강조 중인 부위 id (null = 전체)
+  peel: 'surface',      // 'surface' | LAYERS[].id — 껍질 벗기기 단계
+  inverseInput: false,  // false = 슬라이더가 시술량, true = 슬라이더가 원하는 표면 변화
+  markerAnchor: null,   // 마커로 위치 확인 중인 계측점 id (null = 표시 안 함)
+  hotSeg: null,         // 조작 중인 시술의 대상 뼈 세그먼트 id
+};
+OPS.forEach(o => state.amounts[o.id] = 0);
+
+/* ══════════════════════════════════════════════════════════════
+   DOM
+   ══════════════════════════════════════════════════════════════ */
+
+const stage      = document.getElementById('stage');
+const statusEl   = document.getElementById('status');
+const startEl    = document.getElementById('start');
+const dropEl     = document.getElementById('drop');
+const fileEl     = document.getElementById('file');
+const camModal   = document.getElementById('camModal');
+const camVideo   = document.getElementById('camVideo');
+const readoutEl  = document.getElementById('readout');
+const viewHintEl = document.getElementById('viewHint');
+const matGroup   = document.getElementById('matGroup');
+const segPeel    = document.getElementById('segPeel');
+const segDir     = document.getElementById('segDir');
+const peelHintEl = document.getElementById('peelHint');
+const dirHintEl  = document.getElementById('dirHint');
+const thickEl    = document.getElementById('thick');
+
+function setStatus(msg, isError = false) {
+  if (!msg) { statusEl.classList.add('hidden'); return; }
+  statusEl.textContent = msg;
+  statusEl.classList.remove('hidden');
+  statusEl.classList.toggle('error', isError);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   three.js 씬
+   ══════════════════════════════════════════════════════════════ */
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e1013);
+
+const camera = new THREE.PerspectiveCamera(22, 1, 0.1, 200);
+const CAM_DIST = (REF_H / 2) / Math.tan(THREE.MathUtils.degToRad(22) / 2) * 1.12;
+camera.position.set(0, 0, CAM_DIST);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.enabled = false;   // 사진 모드에서는 고정
+
+scene.add(new THREE.AmbientLight(0xffffff, 1.05));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.7);
+keyLight.position.set(1.1, 1.3, 2.6);
+scene.add(keyLight);
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+
+/* ── 재질 ──────────────────────────────────────────────────── */
+
+const materials = {
+  photo: new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
+  shade: new THREE.MeshStandardMaterial({ color: 0xc8cdd6, roughness: 0.75, side: THREE.DoubleSide }),
+  wire:  new THREE.MeshBasicMaterial({ color: 0x4da3ff, wireframe: true, side: THREE.DoubleSide }),
+};
+const backdropMat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+
+/* ── 얼굴 메쉬 ─────────────────────────────────────────────── */
+
+const faceGeo = new THREE.BufferGeometry();
+faceGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NUM_LM * 3), 3));
+faceGeo.setAttribute('uv',       new THREE.BufferAttribute(new Float32Array(NUM_LM * 2), 2));
+const faceMesh = new THREE.Mesh(faceGeo, materials.photo);
+faceMesh.frustumCulled = false;
+faceMesh.visible = false;
+scene.add(faceMesh);
+
+/* ── 인식 오버레이 (부위 색상 / 점 / 윤곽선) ────────────────── */
+/*  세 오브젝트 모두 faceGeo 의 position 속성을 그대로 공유하므로,
+    얼굴 메쉬만 갱신하면 자동으로 함께 따라옵니다. */
+
+const posAttr = faceGeo.attributes.position;
+const colorAttr = new THREE.BufferAttribute(new Float32Array(NUM_LM * 3), 3);
+
+const regionGeo = new THREE.BufferGeometry();
+regionGeo.setAttribute('position', posAttr);
+regionGeo.setAttribute('color', colorAttr);
+
+const regionMesh = new THREE.Mesh(regionGeo, new THREE.MeshBasicMaterial({
+  vertexColors: true, side: THREE.DoubleSide,
+  transparent: true, opacity: 0.3, depthWrite: false,
+  polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+}));
+regionMesh.frustumCulled = false;
+regionMesh.visible = false;
+regionMesh.renderOrder = 10;
+scene.add(regionMesh);
+
+const pointsGeo = new THREE.BufferGeometry();
+pointsGeo.setAttribute('position', posAttr);
+pointsGeo.setAttribute('color', colorAttr);
+const pointCloud = new THREE.Points(pointsGeo, new THREE.PointsMaterial({
+  vertexColors: true, size: REF_H * 0.011, sizeAttenuation: true,
+  depthTest: false, transparent: true,
+}));
+pointCloud.frustumCulled = false;
+pointCloud.visible = false;
+pointCloud.renderOrder = 20;
+scene.add(pointCloud);
+
+// 부위 경계선 + 공식 윤곽선. 정점 색상을 쓰므로 부위별 색이 선으로만 나타납니다.
+const linesGeo = new THREE.BufferGeometry();
+linesGeo.setAttribute('position', posAttr);
+linesGeo.setAttribute('color', colorAttr);
+const contourLines = new THREE.LineSegments(linesGeo, new THREE.LineBasicMaterial({
+  vertexColors: true, transparent: true, opacity: 0.95, depthTest: false,
+}));
+contourLines.frustumCulled = false;
+contourLines.visible = false;
+contourLines.renderOrder = 15;
+scene.add(contourLines);
+
+/** 정점 → 부위 인덱스. -1 = 미분류 */
+const regionOf = new Int16Array(NUM_LM).fill(-1);
+const regionCount = new Array(REGION_DEFS.length).fill(0);
+
+/* ── 해부 레이어 ───────────────────────────────────────────── */
+/*  연조직 층 = "표면 정점 - 기준 법선 × 층 깊이". 표면 메쉬와 삼각형 인덱스를
+    공유하므로 음영·위상이 그대로 유지됩니다.
+    골격 층 = 성형 대상 뼈 세그먼트 11개. 각자 걸러낸 인덱스를 갖습니다.
+    사진 모드는 얼굴 z 를 0 으로 평면화하므로 레이어는 3D 모델 뷰 전용입니다. */
+
+const thickMm = new Float32Array(NUM_LM);          // 정점별 표면→아래 구조 거리 (보간 결과)
+const baseNormal = new Float32Array(NUM_LM * 3);   // 변형 전 3D 형상의 정점 법선
+const segOf = new Int16Array(NUM_LM).fill(-1);     // 정점 → 뼈 세그먼트 인덱스. -1 = 뼈 없음
+const voidOf = new Int16Array(NUM_LM).fill(-1);    // 정점 → 공백 인덱스. -1 = 공백 아님
+
+const layerGroup = new THREE.Group();
+layerGroup.visible = false;
+scene.add(layerGroup);
+
+/** 연조직 층 3장 (피부·지방·근육). 표면 인덱스를 공유합니다. */
+const layerMeshes = LAYERS.map(L => {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NUM_LM * 3), 3));
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+    color: L.color, roughness: 0.62, metalness: 0.02,
+    side: THREE.DoubleSide, transparent: true, opacity: 1,
+  }));
+  mesh.frustumCulled = false;
+  layerGroup.add(mesh);
+  return mesh;
+});
+
+/*
+  골격 세그먼트 메쉬. 위치 버퍼는 골격 층 메쉬(layerMeshes[BONE_LI]) 것을
+  그대로 공유하고 인덱스만 다릅니다 — 정점 좌표를 11번 중복 계산할 이유가 없고,
+  세그먼트끼리 경계에서 정확히 맞물려야 하기 때문입니다.
+*/
+const bonePosAttr = layerMeshes[BONE_LI].geometry.attributes.position;
+const segMeshes = BONE_SEGMENTS.map(S => {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', bonePosAttr);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+    color: S.color, roughness: 0.68, metalness: 0.02,
+    side: THREE.DoubleSide, transparent: true, opacity: 1,
+  }));
+  mesh.frustumCulled = false;
+  mesh.visible = false;
+  layerGroup.add(mesh);
+  return mesh;
+});
+// 세그먼트가 골격 층을 대신하므로 통짜 골격 메쉬는 그리지 않습니다.
+layerMeshes[BONE_LI].visible = false;
+layerMeshes[BONE_LI].material.visible = false;
+
+/** 계측점 위치 확인용 마커. 인덱스가 맞는지는 눈으로만 검증할 수 있습니다. */
+const markerGeo = new THREE.SphereGeometry(1, 16, 12);
+const markerMat = new THREE.MeshBasicMaterial({ color: 0x4da3ff, depthTest: false });
+const markers = [0, 1].map(() => {
+  const m = new THREE.Mesh(markerGeo, markerMat);
+  m.visible = false;
+  m.renderOrder = 20;
+  m.frustumCulled = false;
+  scene.add(m);
+  return m;
+});
+
+/** 정점 인접 리스트 (테셀레이션 엣지 기준). 계측점 거리 계산에 사용. */
+let adjacency = null;
+
+function buildAdjacency() {
+  const tri = faceGeo.getIndex();
+  if (!tri) return null;
+  const sets = Array.from({ length: NUM_LM }, () => new Set());
+  const t = tri.array;
+  for (let i = 0; i + 2 < t.length; i += 3) {
+    const a = t[i], b = t[i + 1], c = t[i + 2];
+    sets[a].add(b); sets[a].add(c);
+    sets[b].add(c); sets[b].add(a);
+    sets[c].add(a); sets[c].add(b);
+  }
+  return sets.map(s => Array.from(s));
+}
+
+function ensureAdjacency() {
+  if (!adjacency) adjacency = buildAdjacency();
+  return adjacency;
+}
+
+/* ── 계측점 → 정점 두께 보간 ────────────────────────────────── */
+
+/** anchorDist[a][v] = 계측점 a 에서 정점 v 까지의 표면 위 거리 */
+let anchorDist = null;
+
+/**
+ * 계측점마다 테셀레이션 엣지 위 Dijkstra 를 1회 돌립니다.
+ *
+ * 직선(유클리드) 거리를 쓰면 안 됩니다. 코와 볼은 3D 로는 가까운데 표면을 따라
+ * 가면 멉니다. 직선 거리로 가중하면 코 값이 볼로 번져 콧대가 뭉개집니다.
+ * 표면 위 거리로 재면 얼굴 주름을 따라 자연스럽게 퍼집니다.
+ *
+ * 계측점 27개 × 468 정점이므로 비용은 무시할 수준이고, 값을 편집할 때는 이 표를
+ * 재사용하므로 다시 돌리지 않습니다 (타이핑 즉시 반영되는 이유).
+ */
+function buildAnchorDistances() {
+  const adj = ensureAdjacency();
+  if (!adj) { anchorDist = null; return; }
+
+  const w = (a, b) => Math.hypot(
+    basePos[a * 3]     - basePos[b * 3],
+    basePos[a * 3 + 1] - basePos[b * 3 + 1],
+    basePos[a * 3 + 2] - basePos[b * 3 + 2],
+  );
+
+  anchorDist = ANCHORS.map(A => {
+    const dist = new Float32Array(NUM_LM).fill(Infinity);
+    // 좌우 계측점은 두 시작점에서 동시에 퍼뜨립니다 — 좌우 대칭 한 값이므로
+    // 가까운 쪽 거리를 쓰는 게 맞습니다.
+    for (const lm of anchorLms(A)) if (lm < NUM_LM) dist[lm] = 0;
+    // 정점 수가 작아 이진 힙 없이 선형 최소 추출로 충분합니다.
+    const done = new Uint8Array(NUM_LM);
+    for (;;) {
+      let u = -1, best = Infinity;
+      for (let i = 0; i < NUM_LM; i++) {
+        if (!done[i] && dist[i] < best) { best = dist[i]; u = i; }
+      }
+      if (u < 0) break;
+      done[u] = 1;
+      for (const v of adj[u]) {
+        const nd = dist[u] + w(u, v);
+        if (nd < dist[v]) dist[v] = nd;
+      }
+    }
+    return dist;
+  });
+}
+
+const SHEPARD_K = 4;    // 가중에 참여하는 최근접 계측점 수
+
+/**
+ * Shepard 보간 — t(v) = Σ w·t_a / Σ w,  w = 1/(d+ε)², 최근접 K개만.
+ *
+ * 계측점 자신의 정점에서는 d=0 이므로 입력값이 그대로 나옵니다. "하나씩 정확한
+ * 값을 넣는다"가 의미를 가지려면 이 성질이 필수입니다.
+ *
+ * 이전의 라플라시안 스무딩은 제거했습니다. 보간 결과가 이미 매끄럽고, 스무딩을
+ * 남기면 안와 연·비골 끝처럼 실제로 날카로워야 하는 경계를 다시 뭉갭니다.
+ */
+function buildThickness() {
+  if (!anchorDist) buildAnchorDistances();
+  const vals = ANCHORS.map(a => anchorVal(a));
+
+  if (!anchorDist) {                       // 인접 정보가 없으면 균일값 (안전판)
+    thickMm.fill(vals[0] ?? 8);
+    return;
+  }
+
+  const EPS = 1e-3;
+  const cand = [];
+  for (let i = 0; i < NUM_LM; i++) {
+    cand.length = 0;
+    for (let a = 0; a < ANCHORS.length; a++) {
+      const d = anchorDist[a][i];
+      if (d === Infinity) continue;
+      cand.push([d, vals[a]]);
+    }
+    if (!cand.length) { thickMm[i] = 8; continue; }
+    cand.sort((p, q) => p[0] - q[0]);
+
+    if (cand[0][0] < EPS) { thickMm[i] = cand[0][1]; continue; }   // 계측점 자신
+    let num = 0, den = 0;
+    for (let k = 0; k < Math.min(SHEPARD_K, cand.length); k++) {
+      const wk = 1 / (cand[k][0] * cand[k][0]);
+      num += wk * cand[k][1];
+      den += wk;
+    }
+    thickMm[i] = num / den;
+  }
+}
+
+/* ── 뼈 세그먼트 / 공백 분류 ───────────────────────────────── */
+
+/**
+ * 정점을 뼈 세그먼트나 공백에 배정합니다.
+ * 공백을 먼저 판정합니다 — 뼈가 없는 곳을 뼈로 분류하면 안 되기 때문입니다.
+ */
+function buildSegments() {
+  segOf.fill(-1);
+  voidOf.fill(-1);
+
+  // 정규화 기준. 얼굴 크기가 달라도 같은 해부학적 위치에서 갈리도록.
+  let minX = Infinity, maxX = -Infinity;
+  for (let i = 0; i < NUM_LM; i++) {
+    const x = basePos[i * 3];
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+  }
+  const mid = (minX + maxX) / 2;
+  const halfW = Math.max(1e-6, (maxX - minX) / 2);
+
+  const yOf  = lm => basePos[lm * 3 + 1];
+
+  // 명시 정점 목록으로 지정된 공백 (구강 등)
+  const explicitVoid = new Int16Array(NUM_LM).fill(-1);
+  VOID_DEFS.forEach((V, vi) => {
+    if (!V.verts) return;
+    for (const v of V.verts) if (v < NUM_LM) explicitVoid[v] = vi;
+  });
+
+  for (let i = 0; i < NUM_LM; i++) {
+    const ri = regionOf[i];
+    const c = {
+      reg: ri >= 0 ? REGION_DEFS[ri].id : '',
+      y: basePos[i * 3 + 1],
+      ax: Math.abs(basePos[i * 3] - mid) / halfW,
+      yOf,
+    };
+
+    if (explicitVoid[i] >= 0) { voidOf[i] = explicitVoid[i]; continue; }
+    const vi = VOID_DEFS.findIndex(V => V.pick && V.pick(c));
+    if (vi >= 0) { voidOf[i] = vi; continue; }
+
+    const si = BONE_SEGMENTS.findIndex(S => S.pick(c));
+    if (si >= 0) segOf[i] = si;
+  }
+}
+
+/**
+ * 세그먼트별 삼각형 인덱스.
+ *
+ * 공백(안와·비강·구강·협부·측두와) 정점에 닿은 삼각형은 버립니다. 이 구멍이
+ * 골격 형태를 만드는 핵심입니다.
+ *
+ * 남은 삼각형은 정점 다수(2개 이상)가 속한 세그먼트에 줍니다. "세 정점이 모두
+ * 같아야 한다"로 하면 턱선처럼 폭이 랜드마크 1개뿐인 띠는 삼각형이 하나도 안
+ * 남아 뼈가 통째로 사라집니다(하악각·하악체·치조골이 실제로 0개였음). 또 실제
+ * 두개골의 뼈들은 봉합으로 맞닿아 있지 벌어져 있지 않으므로, 경계를 버려
+ * 틈을 만드는 것보다 다수결로 한쪽에 붙이는 쪽이 해부학적으로도 맞습니다.
+ * 세 정점이 서로 다른 세그먼트면 어디에 줄지 정할 수 없으므로 버립니다.
+ *
+ * 반드시 orientIndex() 뒤에 호출해야 합니다. 앞에 두면 골격만 음영이 얼룩지고
+ * 증상이 조명 버그처럼 보여 원인을 찾기 어렵습니다.
+ */
+function buildSegmentIndex() {
+  const tri = faceGeo.getIndex();
+  if (!tri) return;
+  const t = tri.array;
+  const buckets = BONE_SEGMENTS.map(() => []);
+
+  for (let i = 0; i + 2 < t.length; i += 3) {
+    const a = t[i], b = t[i + 1], c = t[i + 2];
+    // 공백에 닿으면 구멍 — 뼈를 그리지 않습니다
+    if (voidOf[a] >= 0 || voidOf[b] >= 0 || voidOf[c] >= 0) continue;
+
+    const sa = segOf[a], sb = segOf[b], sc = segOf[c];
+    const s = sa === sb || sa === sc ? sa
+            : sb === sc              ? sb
+            : -1;                            // 셋 다 다름 → 귀속 불명
+    if (s < 0) continue;
+    buckets[s].push(a, b, c);
+  }
+
+  buckets.forEach((list, si) => {
+    const geo = segMeshes[si].geometry;
+    geo.setIndex(list);
+    // 인덱스가 비면 three.js 가 경고 없이 아무것도 그리지 않으므로 개수를 남깁니다.
+    BONE_SEGMENTS[si].triCount = list.length / 3;
+    geo.computeBoundingSphere();
+  });
+
+  // 세그먼트가 비어 있으면 화면에는 "뼈가 없다" 로만 보여 원인을 알 수 없습니다.
+  // 분류 조건을 손볼 때 필요한 유일한 단서이므로 삼각형 수를 남깁니다.
+  console.log('뼈 세그먼트 삼각형 수',
+    Object.fromEntries(BONE_SEGMENTS.map(S => [S.ko, S.triCount])));
+}
+
+/**
+ * 변형 전 3D 형상(basePos)에서 정점 법선을 뽑아 둡니다.
+ * 사진 모드의 평면화된 좌표로 계산하면 법선이 전부 +z 가 되어
+ * 레이어가 그냥 뒤로 밀린 판이 됩니다.
+ */
+function computeBaseNormals() {
+  const tmp = new THREE.BufferGeometry();
+  tmp.setAttribute('position', new THREE.BufferAttribute(basePos.slice(), 3));
+  tmp.setIndex(faceGeo.getIndex());
+  tmp.computeVertexNormals();
+  baseNormal.set(tmp.attributes.normal.array);
+  tmp.dispose();
+
+  // 테셀레이션에 없는 정점(홍채 468~477)은 법선이 0 → 정면 방향으로 대체
+  for (let i = 0; i < NUM_LM; i++) {
+    const x = baseNormal[i*3], y = baseNormal[i*3+1], z = baseNormal[i*3+2];
+    if (x*x + y*y + z*z < 1e-6) { baseNormal[i*3] = 0; baseNormal[i*3+1] = 0; baseNormal[i*3+2] = 1; }
+  }
+}
+
+/* ── 배경 사진 격자 ────────────────────────────────────────── */
+/*  원본 이미지 전체를 촘촘한 격자 평면으로 만들어, 얼굴 메쉬와 동일한
+    변형장으로 함께 왜곡시킵니다. 머리·귀·목 윤곽까지 자연스럽게 따라옵니다. */
+
+const N = GRID + 1;
+const backdropGeo = new THREE.BufferGeometry();
+{
+  const pos = new Float32Array(N * N * 3);
+  const uv  = new Float32Array(N * N * 2);
+  const idx = [];
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const k = j * N + i;
+      uv[k * 2]     = i / GRID;
+      uv[k * 2 + 1] = 1 - j / GRID;
+    }
+  }
+  for (let j = 0; j < GRID; j++) {
+    for (let i = 0; i < GRID; i++) {
+      const a = j * N + i, b = a + 1, c = a + N, d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
+  }
+  backdropGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  backdropGeo.setAttribute('uv',       new THREE.BufferAttribute(uv, 2));
+  backdropGeo.setIndex(idx);
+}
+const backdrop = new THREE.Mesh(backdropGeo, backdropMat);
+backdrop.frustumCulled = false;
+backdrop.visible = false;
+scene.add(backdrop);
+
+// 배경 격자의 기준 좌표 (변형 전, z=0 평면상의 위치)
+const gridRef = new Float32Array(N * N * 2);
+for (let j = 0; j < N; j++) {
+  for (let i = 0; i < N; i++) {
+    const k = j * N + i;
+    gridRef[k * 2]     = i / GRID;   // u
+    gridRef[k * 2 + 1] = j / GRID;   // v
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   MediaPipe
+   ══════════════════════════════════════════════════════════════ */
+
+let landmarker = null;
+let landmarkerReady = null;
+
+function ensureLandmarker() {
+  if (landmarkerReady) return landmarkerReady;
+  landmarkerReady = (async () => {
+    const fileset = await FilesetResolver.forVisionTasks(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm'
+    );
+    landmarker = await FaceLandmarker.createFromOptions(fileset, {
+      baseOptions: {
+        modelAssetPath:
+          'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+        delegate: 'GPU',
+      },
+      runningMode: 'IMAGE',
+      numFaces: 1,
+    });
+
+    // 삼각형 인덱스: FACE_LANDMARKS_TESSELATION 은 삼각형마다 3개의 edge 가
+    // 연속으로 들어있는 구조라, 3개씩 묶어 start 를 뽑으면 삼각형이 됩니다.
+    const tess = FaceLandmarker.FACE_LANDMARKS_TESSELATION;
+    if (!tess) throw new Error('테셀레이션 데이터를 찾을 수 없습니다.');
+    const idx = [];
+    for (let i = 0; i + 2 < tess.length; i += 3) {
+      idx.push(tess[i].start, tess[i + 1].start, tess[i + 2].start);
+    }
+    faceGeo.setIndex(idx);
+    // 같은 인덱스 속성을 공유 → orientIndex() 의 감기 방향 정렬 결과가 함께 반영됨
+    regionGeo.setIndex(faceGeo.getIndex());
+    for (const m of layerMeshes) m.geometry.setIndex(faceGeo.getIndex());
+    // 경계선 인덱스는 부위 분류 결과에 의존하므로 buildRegions() 에서 만듭니다.
+  })();
+  return landmarkerReady;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   부위 분류
+   ══════════════════════════════════════════════════════════════ */
+
+/** 공식 연결 집합에서 정점 인덱스만 모읍니다. */
+function verticesOf(keys) {
+  const s = new Set();
+  for (const key of keys) {
+    for (const c of FaceLandmarker[key] || []) { s.add(c.start); s.add(c.end); }
+  }
+  return s;
+}
+
+/**
+ * 468개(+홍채 10개) 정점을 부위로 분류합니다.
+ *   1) 공식 집합이 있는 부위를 먼저 확정 (선언 순서가 우선순위)
+ *   2) 남은 정점은 가장 가까운 씨앗의 부위로 배정
+ */
+function buildRegions() {
+  regionOf.fill(-1);
+  regionCount.fill(0);
+
+  // 1) 공식 집합
+  REGION_DEFS.forEach((def, ri) => {
+    if (!def.builtin) return;
+    for (const v of verticesOf(def.builtin)) {
+      if (v < NUM_LM && regionOf[v] === -1) regionOf[v] = ri;
+    }
+  });
+
+  // 2) 최근접 씨앗
+  const seeded = REGION_DEFS
+    .map((def, ri) => ({ ri, seeds: def.seeds }))
+    .filter(x => x.seeds?.length);
+
+  for (let i = 0; i < NUM_LM; i++) {
+    if (regionOf[i] !== -1) continue;
+    const px = basePos[i * 3], py = basePos[i * 3 + 1], pz = basePos[i * 3 + 2];
+    let best = -1, bestD = Infinity;
+    for (const { ri, seeds } of seeded) {
+      for (const s of seeds) {
+        const d = (px - basePos[s * 3]) ** 2
+                + (py - basePos[s * 3 + 1]) ** 2
+                + (pz - basePos[s * 3 + 2]) ** 2;
+        if (d < bestD) { bestD = d; best = ri; }
+      }
+    }
+    regionOf[i] = best;
+  }
+
+  for (let i = 0; i < NUM_LM; i++) {
+    if (regionOf[i] >= 0) regionCount[regionOf[i]]++;
+  }
+
+  buildBoundaryLines();
+
+  // 순서가 중요합니다.
+  //   buildSegments        부위 분류 + 랜드마크 좌표로 뼈/공백 배정
+  //   buildAnchorDistances 사진이 바뀌면 좌표가 바뀌므로 거리표를 다시 만듭니다
+  //   buildThickness       거리표로 정점별 두께 보간
+  //   buildSegmentIndex    orientIndex() 뒤여야 감기 방향이 유지됩니다
+  //                        (loadSource 에서 orientIndex → buildRegions 순서)
+  buildSegments();
+  buildAnchorDistances();
+  buildThickness();
+  buildSegmentIndex();
+
+  paintRegions();
+  buildLegend();
+  // 마커는 변형된 표면 좌표를 읽으므로 rebuild() 안에서 갱신합니다.
+}
+
+/**
+ * 경계선 인덱스를 만듭니다.
+ *   - 삼각형의 세 변 중 양 끝 정점의 부위가 다른 변 = 부위 경계
+ *   - 공식 윤곽 집합(눈/입술/눈썹/홍채/얼굴외곽)도 함께 추가
+ * 사진 위에 색을 칠하지 않고 선으로만 표시하므로 원본 피부색이 그대로 보입니다.
+ */
+function buildBoundaryLines() {
+  const tri = faceGeo.getIndex();
+  if (!tri) return;
+  const seen = new Set();
+  const idx = [];
+  const add = (a, b) => {
+    const k = a < b ? a * 1000 + b : b * 1000 + a;
+    if (seen.has(k)) return;
+    seen.add(k);
+    idx.push(a, b);
+  };
+
+  const t = tri.array;
+  for (let i = 0; i + 2 < t.length; i += 3) {
+    const a = t[i], b = t[i + 1], c = t[i + 2];
+    if (regionOf[a] !== regionOf[b]) add(a, b);
+    if (regionOf[b] !== regionOf[c]) add(b, c);
+    if (regionOf[c] !== regionOf[a]) add(c, a);
+  }
+  for (const key of CONTOUR_SETS) {
+    for (const cc of FaceLandmarker[key] || []) add(cc.start, cc.end);
+  }
+  linesGeo.setIndex(idx);
+}
+
+const DIM_COLOR = new THREE.Color(0x333a44);
+
+/** 부위 색상을 정점 색상 버퍼에 씁니다. isolated 가 있으면 나머지는 어둡게. */
+function paintRegions() {
+  const arr = colorAttr.array;
+  const iso = state.isolated === null
+    ? -1
+    : REGION_DEFS.findIndex(d => d.id === state.isolated);
+  const c = new THREE.Color();
+
+  for (let i = 0; i < NUM_LM; i++) {
+    const ri = regionOf[i];
+    const on = ri >= 0 && (iso === -1 || ri === iso);
+    if (on) c.setHex(REGION_DEFS[ri].color); else c.copy(DIM_COLOR);
+    arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b;
+  }
+  colorAttr.needsUpdate = true;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   사진 → 트윈
+   ══════════════════════════════════════════════════════════════ */
+
+const basePos = new Float32Array(NUM_LM * 3);   // 변형 전 얼굴 정점
+const workPos = new Float32Array(NUM_LM * 3);   // 변형 후 얼굴 정점
+
+/**
+ * 테셀레이션에서 뽑은 삼각형은 감기 방향(CW/CCW)이 섞여 있어서, 그대로
+ * computeVertexNormals() 하면 인접 법선이 상쇄되며 음영이 얼룩집니다.
+ * 얼굴은 거의 정면을 향한 곡면이므로, 화면상 감기 방향이 반시계가 되도록
+ * (= 법선이 +z 를 향하도록) 한 번만 정렬해 줍니다.
+ */
+function orientIndex() {
+  const idxAttr = faceGeo.getIndex();
+  if (!idxAttr) return;
+  const a = idxAttr.array;
+  for (let i = 0; i + 2 < a.length; i += 3) {
+    const i0 = a[i], i1 = a[i + 1], i2 = a[i + 2];
+    const e1x = basePos[i1 * 3]     - basePos[i0 * 3];
+    const e1y = basePos[i1 * 3 + 1] - basePos[i0 * 3 + 1];
+    const e2x = basePos[i2 * 3]     - basePos[i0 * 3];
+    const e2y = basePos[i2 * 3 + 1] - basePos[i0 * 3 + 1];
+    if (e1x * e2y - e1y * e2x < 0) { a[i + 1] = i2; a[i + 2] = i1; }
+  }
+  idxAttr.needsUpdate = true;
+}
+
+async function loadSource(source, srcW, srcH) {
+  setStatus('얼굴 인식 모델 준비 중…');
+  try {
+    await ensureLandmarker();
+  } catch (e) {
+    setStatus('모델 로드 실패: ' + e.message, true);
+    return;
+  }
+
+  // 크기 제한 + 캔버스로 통일 (검출과 텍스처가 같은 픽셀을 쓰도록)
+  const k = Math.min(1, MAX_PX / Math.max(srcW, srcH));
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(srcW * k);
+  cv.height = Math.round(srcH * k);
+  cv.getContext('2d').drawImage(source, 0, 0, cv.width, cv.height);
+
+  setStatus('얼굴을 분석하고 있습니다…');
+  let lm;
+  try {
+    const res = landmarker.detect(cv);
+    lm = res.faceLandmarks?.[0];
+  } catch (e) {
+    setStatus('분석 실패: ' + e.message, true);
+    return;
+  }
+  if (!lm) {
+    setStatus('얼굴을 찾지 못했습니다.\n정면·밝은 조명·얼굴이 충분히 큰 사진으로 다시 시도해 주세요.', true);
+    return;
+  }
+
+  // 텍스처
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  materials.photo.map = tex;
+  materials.photo.needsUpdate = true;
+  backdropMat.map = tex;
+  backdropMat.needsUpdate = true;
+
+  state.aspect = cv.width / cv.height;
+
+  // 랜드마크 → 월드 좌표 + UV (좌우 반전 없음: 업로드 사진 그대로)
+  const refW = REF_H * state.aspect;
+  const uvArr = faceGeo.attributes.uv.array;
+  for (let i = 0; i < NUM_LM; i++) {
+    const p = lm[i];
+    basePos[i * 3]     =  (p.x - 0.5) * refW;
+    basePos[i * 3 + 1] = -(p.y - 0.5) * REF_H;
+    basePos[i * 3 + 2] = -p.z * refW * DEPTH_GAIN;
+    uvArr[i * 2]     = p.x;
+    uvArr[i * 2 + 1] = 1 - p.y;
+  }
+  faceGeo.attributes.uv.needsUpdate = true;
+
+  // 삼각형 감기 방향 정규화 (음영 얼룩 제거)
+  orientIndex();
+
+  // 해부 레이어를 안쪽으로 밀 기준 법선 (평면화 전 3D 형상에서)
+  computeBaseNormals();
+
+  // 얼굴 중심 — 회전 기준점. 이미지 중심(0,0,0)을 쓰면 얼굴이 궤도를 도는 것처럼 보임
+  let cx = 0, cy = 0, cz = 0;
+  for (let i = 0; i < NUM_LM; i++) {
+    cx += basePos[i * 3]; cy += basePos[i * 3 + 1]; cz += basePos[i * 3 + 2];
+  }
+  state.center = new THREE.Vector3(cx / NUM_LM, cy / NUM_LM, cz / NUM_LM);
+
+  // mm 스케일 추정 (얼굴 폭 ≒ 관골간 폭 140mm). 정면 폭이므로 x·y 만 사용
+  state.faceW = Math.hypot(
+    basePos[LM_FACE_L * 3]     - basePos[LM_FACE_R * 3],
+    basePos[LM_FACE_L * 3 + 1] - basePos[LM_FACE_R * 3 + 1],
+  ) || 1;
+  state.mmPerUnit = BIZYGOMATIC_MM / state.faceW;
+
+  // 배경 평면 보정 배율: z=BACKDROP_Z 에서 z=0 평면과 같은 화면 크기를 갖도록
+  state.backdropScale = (CAM_DIST - BACKDROP_Z) / CAM_DIST;
+
+  // 부위 분류
+  // 여기서 예외가 새면 상태 표시가 "분석 중"에 멈춘 채 아무것도 안 그려져,
+  // 콘솔을 열지 않으면 원인을 알 수 없습니다. 반드시 화면에 띄웁니다.
+  try {
+    buildRegions();
+  } catch (e) {
+    setStatus('레이어 생성 실패: ' + e.message, true);
+    console.error(e);
+    return;
+  }
+  document.getElementById('detectInfo').textContent =
+    `랜드마크 ${NUM_LM}개 · ${REGION_DEFS.length}개 부위로 분류됨. 아래 부위를 눌러 하나만 강조할 수 있습니다.`;
+
+  state.loaded = true;
+  faceMesh.visible = true;
+  startEl.classList.add('hidden');
+  enableUI(true);
+  applyOverlay();
+  applyView();
+  setStatus('');
+}
+
+/* ══════════════════════════════════════════════════════════════
+   변형
+   ══════════════════════════════════════════════════════════════ */
+
+/*
+  ─────────── 역방향 시뮬레이션의 산술 ───────────
+  슬라이더 원값(sliderMm) 의 해석이 입력 방향에 따라 달라집니다.
+
+    시술량 → 표면 (의사 입력):  시술량 = sliderMm,        표면 = 시술량 × ratio
+    표면 → 시술량 (환자 입력):  표면   = sliderMm,        시술량 = 표면 ÷ ratio
+
+  변형장에 들어가는 값은 언제나 "그 층에서의 실제 변위" 이고,
+  층 깊이 t(0=피부, 1=뼈) 에 따라 다음과 같이 커집니다.
+
+    변위(t) = 시술량 × ( ratio + (1 - ratio) × t )
+
+  t=0 → 시술량×ratio = 표면 변화,  t=1 → 시술량 그대로.
+  즉 뼈 층은 보형물 두께만큼 온전히 움직이고 피부는 그보다 덜 움직입니다.
+  껍질을 벗겨 보면 이 차이가 눈으로 보입니다.
+*/
+function opSliderMm(op) { return state.amounts[op.id] * op.mmMax; }
+
+/** 시술량(보형물 삽입 두께 · 절골량) mm */
+function opProcMm(op) {
+  const mm = opSliderMm(op);
+  return state.inverseInput ? mm / (op.ratio || 1) : mm;
+}
+
+/** 표면에 나타나는 변화 mm */
+function opSurfaceMm(op) { return opProcMm(op) * (op.ratio ?? 1); }
+
+/**
+ * 앵커 주변 정점을 가우시안 가중치로 함께 이동시킵니다.
+ * 한 점만 뾰족하게 튀어나오는 것을 막고 주변 조직까지 자연스럽게 밀리도록
+ * 근사한 것입니다.
+ *
+ * @param flat2D  true 면 x·y 거리만으로 가중치를 계산하고 z 변위를 무시합니다.
+ *                (배경 사진 격자 = 평면이므로 이 모드를 사용)
+ * @param depthT  이 정점이 속한 층의 정규화 깊이 (0 = 표면/피부, 1 = 뼈).
+ *                깊을수록 연조직 감쇠를 덜 받습니다.
+ */
+function accumulateDisplacement(px, py, pz, midX, out, flat2D, depthT = 0) {
+  out[0] = out[1] = out[2] = 0;
+  if (state.showBefore) return;
+
+  const unitPerMm = 1 / state.mmPerUnit;
+
+  for (const op of OPS) {
+    if (state.amounts[op.id] === 0) continue;
+
+    // 깊이(전후) 시술은 정면 2D 에서 z 변위가 보이지 않으므로,
+    // frontal 로 정의된 정면 부수 효과로 대체합니다. (없으면 생략)
+    let mode = op.mode, dir = op.dir, k = 1;
+    if (flat2D && op.depth) {
+      if (!op.frontal) continue;
+      mode = op.frontal.mode;
+      dir  = op.frontal.dir;
+      k    = op.frontal.k;
+    }
+
+    // 층별 연조직 반영률
+    const ratio = op.ratio ?? 1;
+    const layerR = ratio + (1 - ratio) * depthT;
+
+    const sigma = op.sigma * state.faceW;
+    const twoSigmaSq = 2 * sigma * sigma;
+    const dist = opProcMm(op) * layerR * unitPerMm * k;
+
+    for (const a of op.anchors) {
+      const ax = basePos[a * 3], ay = basePos[a * 3 + 1], az = basePos[a * 3 + 2];
+      const d2 = flat2D
+        ? (px - ax) ** 2 + (py - ay) ** 2
+        : (px - ax) ** 2 + (py - ay) ** 2 + (pz - az) ** 2;
+      const w = Math.exp(-d2 / twoSigmaSq);
+      if (w < 0.004) continue;
+
+      if (mode === 'push') {
+        out[0] += dir[0] * dist * w;
+        out[1] += dir[1] * dist * w;
+        if (!flat2D) out[2] += dir[2] * dist * w;
+      } else {
+        out[0] += (px > midX ? -1 : 1) * dist * w;
+      }
+    }
+  }
+}
+
+const _disp = [0, 0, 0];
+
+function rebuild() {
+  if (!state.loaded) return;
+
+  const midX = (basePos[LM_FACE_L * 3] + basePos[LM_FACE_R * 3]) / 2;
+  const flatFace = state.view === 'photo';   // 사진 모드에서는 배경과 완전 정합되도록 평면화
+
+  // ── 얼굴 메쉬 ──
+  for (let i = 0; i < NUM_LM; i++) {
+    const px = basePos[i * 3], py = basePos[i * 3 + 1], pz = basePos[i * 3 + 2];
+    // 사진 모드에서는 배경 격자와 완전히 같은 변형장을 써야 이음선이 생기지 않음
+    accumulateDisplacement(px, py, pz, midX, _disp, flatFace);
+    workPos[i * 3]     = px + _disp[0];
+    workPos[i * 3 + 1] = py + _disp[1];
+    workPos[i * 3 + 2] = flatFace ? 0 : pz + _disp[2];
+  }
+  faceGeo.attributes.position.array.set(workPos);
+  faceGeo.attributes.position.needsUpdate = true;
+  faceGeo.computeVertexNormals();
+  faceGeo.computeBoundingSphere();
+
+  // ── 배경 사진 격자 ──
+  if (state.view === 'photo') {
+    const refW = REF_H * state.aspect;
+    const s = state.backdropScale;
+    const pos = backdropGeo.attributes.position.array;
+
+    for (let k = 0; k < N * N; k++) {
+      const u = gridRef[k * 2], v = gridRef[k * 2 + 1];
+      const rx =  (u - 0.5) * refW;
+      const ry = -(v - 0.5) * REF_H;
+      accumulateDisplacement(rx, ry, 0, midX, _disp, true);
+      pos[k * 3]     = (rx + _disp[0]) * s;
+      pos[k * 3 + 1] = (ry + _disp[1]) * s;
+      pos[k * 3 + 2] = BACKDROP_Z;
+    }
+    backdropGeo.attributes.position.needsUpdate = true;
+    backdropGeo.computeBoundingSphere();
+  }
+
+  // ── 해부 레이어 ──
+  // 각 층은 변형된 표면에서 그 부위의 층 깊이만큼 법선 반대로 들어간 면입니다.
+  // 층이 깊을수록 연조직 감쇠를 덜 받으므로(depthT) 안쪽이 더 많이 움직입니다.
+  if (layerGroup.visible) {
+    const unitPerMm = 1 / state.mmPerUnit;
+    LAYERS.forEach((L, li) => {
+      const mesh = layerMeshes[li];
+      // 골격 층은 세그먼트 메쉬가 위치 버퍼를 공유하므로, 통짜 메쉬가 숨겨져
+      // 있어도 세그먼트가 하나라도 보이면 좌표를 갱신해야 합니다.
+      const needed = mesh.visible
+        || (L.segmented && segMeshes.some(m => m.visible));
+      if (!needed) return;
+
+      const geo = mesh.geometry;
+      const pos = geo.attributes.position.array;
+
+      for (let i = 0; i < NUM_LM; i++) {
+        const th = thickMm[i];
+        const depth = L.depth(th);
+        // 층이 깊을수록 연조직 감쇠를 덜 받습니다 (표면=0, 뼈=1)
+        const dt = th > 0 ? Math.min(1, depth / th) : 0;
+
+        const px = basePos[i * 3], py = basePos[i * 3 + 1], pz = basePos[i * 3 + 2];
+        accumulateDisplacement(px, py, pz, midX, _disp, false, dt);
+
+        const off = depth * unitPerMm;
+        pos[i * 3]     = px + _disp[0] - baseNormal[i * 3]     * off;
+        pos[i * 3 + 1] = py + _disp[1] - baseNormal[i * 3 + 1] * off;
+        pos[i * 3 + 2] = pz + _disp[2] - baseNormal[i * 3 + 2] * off;
+      }
+      geo.attributes.position.needsUpdate = true;
+      geo.computeVertexNormals();
+      geo.computeBoundingSphere();
+
+      // 세그먼트는 위치 속성을 공유하므로 needsUpdate 가 이미 반영됩니다.
+      // 법선은 인덱스가 달라 각자 계산해야 하고, 바운딩 구도 각자 필요합니다.
+      if (L.segmented) {
+        segMeshes.forEach(m => {
+          if (!m.visible) return;
+          m.geometry.computeVertexNormals();
+          m.geometry.computeBoundingSphere();
+        });
+      }
+    });
+  }
+
+  // 마커는 변형된 표면 좌표를 읽으므로 위치 갱신 뒤에 옮깁니다.
+  updateMarkers();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   렌더 루프
+   ══════════════════════════════════════════════════════════════ */
+
+function loop() {
+  requestAnimationFrame(loop);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   보기 모드
+   ══════════════════════════════════════════════════════════════ */
+
+function applyView() {
+  const isPhoto = state.view === 'photo';
+
+  // 사진 모드는 얼굴 z 를 0 으로 평면화하므로 레이어가 의미를 잃습니다 → 표면으로 복귀
+  if (isPhoto) state.peel = 'surface';
+
+  backdrop.visible = isPhoto && state.loaded;
+  controls.enabled = !isPhoto;
+  matGroup.style.display = isPhoto ? 'none' : '';
+
+  faceMesh.material = isPhoto ? materials.photo : materials[state.material];
+
+  if (isPhoto) {
+    camera.position.set(0, 0, CAM_DIST);
+    controls.target.set(0, 0, 0);
+    camera.lookAt(0, 0, 0);
+    viewHintEl.textContent = '원본 사진 전체가 함께 변형됩니다. 환자에게 보여주는 화면.';
+  } else {
+    // 회전 기준을 얼굴 중심으로. 이미지 중심을 쓰면 얼굴이 궤도를 도는 것처럼 보임
+    const c = state.center || new THREE.Vector3();
+    const d = state.faceW * 3.4;   // 얼굴 폭 기준 프레이밍
+    controls.target.copy(c);
+    camera.position.set(c.x + d * 0.42, c.y, c.z + d * 0.91);
+    controls.minDistance = d * 0.45;
+    controls.maxDistance = d * 2.6;
+    // 얼굴 메쉬는 뒷면이 없는 껍데기이므로 뒤로 돌아가지 못하게 제한
+    controls.minAzimuthAngle = -Math.PI * 0.4;
+    controls.maxAzimuthAngle =  Math.PI * 0.4;
+    controls.minPolarAngle = Math.PI * 0.2;
+    controls.maxPolarAngle = Math.PI * 0.8;
+    viewHintEl.textContent = '드래그해서 회전. 콧대·턱끝 같은 깊이 변화는 이 모드의 측면에서 확인하세요.';
+  }
+  controls.update();
+
+  // applyPeel() 이 rebuild() 를 호출합니다 (사진 모드는 평면화 때문에 재계산 필요)
+  applyPeel();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   해부 레이어 — 껍질 벗기기
+   ══════════════════════════════════════════════════════════════ */
+
+/**
+ * 선택한 층을 불투명하게, 그보다 얕은 층은 반투명 껍질로 남깁니다.
+ * 위치 관계가 유지되어 "무엇을 벗겨냈는지" 가 보입니다.
+ * 선택한 층보다 깊은 층은 어차피 안쪽에 가려지므로 그리지 않습니다.
+ */
+function applyPeel() {
+  const pi = LAYERS.findIndex(L => L.id === state.peel);
+  const on = state.loaded && state.view === 'model' && pi >= 0;
+
+  layerGroup.visible = on;
+  layerMeshes.forEach((mesh, i) => {
+    // 골격 층은 세그먼트 메쉬가 대신 그립니다 (통짜 메쉬는 항상 숨김)
+    mesh.visible = on && i <= pi && !LAYERS[i].segmented;
+    const isTarget = i === pi;
+    mesh.material.opacity     = isTarget ? 1 : 0.18;
+    mesh.material.transparent = !isTarget;
+    mesh.material.depthWrite  = isTarget;
+    mesh.renderOrder          = isTarget ? 0 : 6;
+  });
+
+  // 뼈 세그먼트 — 골격 층을 볼 때만. 조작 중인 시술의 대상 뼈는 강조합니다.
+  const boneOn = on && pi === BONE_LI;
+  segMeshes.forEach((m, si) => {
+    const S = BONE_SEGMENTS[si];
+    // 인덱스가 빈 세그먼트는 three.js 가 경고 없이 아무것도 그리지 않으므로
+    // 애초에 보이지 않게 둡니다 (분류가 어긋났을 때 원인 추적이 쉬워집니다).
+    m.visible = boneOn && (S.triCount ?? 0) > 0;
+    const hot = !!state.hotSeg?.includes(S.id);
+    m.material.color.setHex(hot ? BONE_ACCENT : S.color);
+    m.material.emissive.setHex(hot ? BONE_ACCENT_EM : 0x000000);
+  });
+
+  // 레이어를 보는 동안 표면 메쉬(사진 텍스처)는 시야를 가리므로 숨깁니다.
+  faceMesh.visible = state.loaded && !on;
+  matGroup.style.display = (state.view === 'photo' || on) ? 'none' : '';
+
+  [...segPeel.children].forEach(b => b.classList.toggle('on', b.dataset.peel === state.peel));
+  if (boneOn) {
+    const shown = BONE_SEGMENTS.filter(S => (S.triCount ?? 0) > 0).length;
+    peelHintEl.innerHTML =
+      `<b>골격</b> — 성형으로 접근하는 뼈 ${shown}개 세그먼트. `
+      + '안와·비강·구강·협부·측두와는 뼈가 없어 <b>비워 둡니다</b>. '
+      + '세그먼트 경계의 자유 엣지가 뼈 능선입니다. '
+      + '두개골 전체 모델이 아니며, 표면에서 추정한 위치입니다 (문헌 최고 정확도 2.46mm).';
+  } else {
+    peelHintEl.innerHTML = on
+      ? `<b>${LAYERS[pi].label}</b> 층. 위 층은 반투명 껍질로 남겨 두었습니다. `
+        + '시술을 조작하면 안쪽 층이 표면보다 더 많이 움직입니다 (연조직 반영률).'
+      : '계측점 두께만큼 표면을 안쪽으로 밀어 만든 <b>추정 레이어</b>입니다. 3D 모델 뷰에서만 보입니다.';
+  }
+
+  applyOverlay();
+  rebuild();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   UI
+   ══════════════════════════════════════════════════════════════ */
+
+// ── 부위 인식 오버레이 ─────────────────────────────────────
+const legendEl = document.getElementById('legend');
+const tgRegion = document.getElementById('tgRegion');
+const tgPoints = document.getElementById('tgPoints');
+const tgLines  = document.getElementById('tgLines');
+
+function applyOverlay() {
+  // 껍질을 벗긴 동안에는 표면 오버레이(점·경계선)가 해부 구조 위에 겹쳐 보여
+  // 방해가 되므로 숨깁니다. 토글 상태 자체는 보존합니다.
+  const peeling = state.view === 'model' && state.peel !== 'surface';
+  const show = state.loaded && !peeling;
+  regionMesh.visible   = show && state.showRegion;
+  pointCloud.visible   = show && state.showPoints;
+  contourLines.visible = show && state.showLines;
+  tgRegion.classList.toggle('primary', state.showRegion);
+  tgPoints.classList.toggle('primary', state.showPoints);
+  tgLines.classList.toggle('primary', state.showLines);
+}
+
+tgRegion.addEventListener('click', () => { state.showRegion = !state.showRegion; applyOverlay(); });
+tgPoints.addEventListener('click', () => { state.showPoints = !state.showPoints; applyOverlay(); });
+tgLines .addEventListener('click', () => { state.showLines  = !state.showLines;  applyOverlay(); });
+
+function buildLegend() {
+  legendEl.innerHTML = '';
+  REGION_DEFS.forEach((def, ri) => {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.innerHTML = `
+      <span class="dot" style="background:#${def.color.toString(16).padStart(6, '0')}"></span>
+      <span>${def.label}</span>
+      <span class="n">${regionCount[ri]}</span>
+    `;
+    chip.addEventListener('click', () => {
+      state.isolated = state.isolated === def.id ? null : def.id;
+      // 표시 수단이 하나도 켜져 있지 않으면 강조해도 아무 변화가 없으므로 하나를 켜 줍니다.
+      if (def.pointsOnly) state.showPoints = true;
+      else if (!state.showRegion && !state.showPoints) state.showLines = true;
+      paintRegions();
+      applyOverlay();
+      updateLegendDim();
+      updateThickness();
+    });
+    legendEl.appendChild(chip);
+  });
+  updateLegendDim();
+  updateThickness();
+}
+
+function updateLegendDim() {
+  [...legendEl.children].forEach((chip, ri) => {
+    chip.classList.toggle('dim',
+      state.isolated !== null && REGION_DEFS[ri].id !== state.isolated);
+  });
+}
+
+/**
+ * 강조한 부위의 층별 두께를 mm 로 보여줍니다.
+ *
+ * 이전에는 부위 상수(FSTT[id])를 그대로 찍었기 때문에 리드아웃 숫자와 화면 형상이
+ * 서로 다른 값이었습니다. 지금은 그 부위 정점들의 보간된 실제 두께 평균을 쓰므로
+ * 숫자와 형상이 같습니다. 편차가 크면 그 부위 안에서 두께 변화가 크다는 뜻입니다.
+ */
+function updateThickness() {
+  const def = REGION_DEFS.find(d => d.id === state.isolated);
+  if (!def || !state.loaded) { thickEl.classList.add('hidden'); return; }
+  const ri = REGION_DEFS.indexOf(def);
+
+  let sum = 0, n = 0, lo = Infinity, hi = -Infinity, boned = 0;
+  for (let i = 0; i < NUM_LM; i++) {
+    if (regionOf[i] !== ri) continue;
+    const t = thickMm[i];
+    sum += t; n++;
+    if (t < lo) lo = t;
+    if (t > hi) hi = t;
+    if (segOf[i] >= 0) boned++;
+  }
+  if (!n) { thickEl.classList.add('hidden'); return; }
+  const avg = sum / n;
+
+  // 각 층의 자체 두께 = 하단 깊이 - 그 위 층의 하단 깊이
+  let prev = 0;
+  const rows = [], bars = [];
+  for (const L of LAYERS) {
+    const own = Math.max(0, L.depth(avg) - prev);
+    prev = L.depth(avg);
+    rows.push(`${L.label} <span class="tn">${own.toFixed(1)}</span>`);
+    bars.push(`<div style="flex:${own.toFixed(2)};background:#${L.color.toString(16).padStart(6, '0')}"></div>`);
+  }
+
+  // 이 부위에 걸린 뼈 세그먼트 이름 (없으면 골격 성형 대상이 아님)
+  const segNames = [...new Set(
+    [...Array(NUM_LM).keys()]
+      .filter(i => regionOf[i] === ri && segOf[i] >= 0)
+      .map(i => BONE_SEGMENTS[segOf[i]].ko))];
+
+  thickEl.innerHTML = `
+    <div><span class="tn">${def.label}</span> — 층 두께 (mm · 부위 평균)</div>
+    <div id="thickBar">${bars.join('')}</div>
+    <div>${rows.join(' · ')}</div>
+    <div>표면→아래 구조 <span class="tn">${avg.toFixed(1)}mm</span>
+         <span style="opacity:.7">(${lo.toFixed(1)}~${hi.toFixed(1)})</span></div>
+    ${boned
+      ? `<div>골격 세그먼트: <span class="tn">${segNames.join(' · ')}</span>
+             (정점 ${boned}/${n})</div>`
+      : '<div>이 부위는 골격 성형 대상이 아니며 뼈를 표시하지 않습니다.</div>'}
+    <div>계측점 보간 추정치 — 개인 CT 계측값이 아닙니다.</div>
+  `;
+  thickEl.classList.remove('hidden');
+}
+
+/* ══════════════════════════════════════════════════════════════
+   해부 계측점 편집
+   ══════════════════════════════════════════════════════════════ */
+
+const anchorsEl     = document.getElementById('anchors');
+const anchorHintEl  = document.getElementById('anchorHint');
+const anchorInputs  = {};    // 계측점 id -> <input>
+
+/**
+ * 계측점 행(정중선 13 + 좌우 14)을 만듭니다. 행을 누르면 마커가 그 랜드마크로 이동하고, 숫자를 고치면
+ * 즉시 반영됩니다 — 거리표(anchorDist)는 위치에만 의존하므로 재계산하지 않고
+ * 두께 보간만 다시 돌립니다.
+ */
+function buildAnchorPanel() {
+  anchorsEl.innerHTML = '';
+  let midDone = false, latDone = false;
+
+  for (const a of ANCHORS) {
+    const isLat = Array.isArray(a.lm);
+    if (!isLat && !midDone) { midDone = true; addHead('정중선'); }
+    if (isLat && !latDone)  { latDone  = true; addHead('좌우 (대칭 · 한 값)'); }
+
+    const row = document.createElement('div');
+    row.className = 'arow';
+    row.dataset.id = a.id;
+
+    const ko = document.createElement('div');
+    ko.className = 'ako';
+    ko.textContent = a.ko;
+
+    const cr = document.createElement('div');
+    cr.className = 'acr';
+    cr.textContent = `${a.cr} · ${anchorLms(a).join('/')}`;
+
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.step = '0.5';
+    inp.min = String(T_MIN_MM);
+    inp.max = String(T_MAX_MM);
+    inp.value = anchorVal(a).toFixed(1);
+    inp.addEventListener('click', e => e.stopPropagation());
+    inp.addEventListener('input', () => onAnchorInput(a, inp));
+
+    row.append(ko, cr);
+    if (a.noBone) {
+      const nb = document.createElement('span');
+      nb.className = 'anb';
+      nb.textContent = '뼈없음';
+      nb.title = '이 계측점 주변은 골격 층에서 비웁니다';
+      row.append(nb);
+    }
+    row.append(inp);
+    row.addEventListener('click', () => {
+      state.markerAnchor = state.markerAnchor === a.id ? null : a.id;
+      refreshAnchorRows();
+      updateMarkers();
+    });
+
+    anchorsEl.appendChild(row);
+    anchorInputs[a.id] = inp;
+  }
+  refreshAnchorRows();
+  updateAnchorHint();
+
+  function addHead(text) {
+    const h = document.createElement('div');
+    h.className = 'ahead';
+    h.textContent = text;
+    anchorsEl.appendChild(h);
+  }
+}
+
+/**
+ * 입력 처리. 빈 값·문자는 무시하고 이전 값을 유지합니다.
+ * 여기서 막지 않으면 NaN 이 정점 좌표까지 전파되어 메쉬가 통째로 사라지고,
+ * 화면상 증상은 "갑자기 아무것도 안 보임" 뿐이라 원인을 찾을 수 없습니다.
+ */
+function onAnchorInput(a, inp) {
+  const v = parseFloat(inp.value);
+  if (!Number.isFinite(v)) { inp.classList.add('edited'); return; }   // 타이핑 중 — 아직 반영 안 함
+  anchorOverride[a.id] = clampT(v);
+  saveOverrides();
+  refreshAnchorRows();
+  updateAnchorHint();
+  updateDisclaimer();
+  if (!state.loaded) return;
+  buildThickness();     // 거리표 재사용 — Dijkstra 는 다시 돌지 않습니다
+  updateThickness();
+  rebuild();
+}
+
+function refreshAnchorRows() {
+  for (const a of ANCHORS) {
+    const inp = anchorInputs[a.id];
+    if (!inp) continue;
+    inp.classList.toggle('edited', Number.isFinite(anchorOverride[a.id]));
+    inp.parentElement.classList.toggle('on', state.markerAnchor === a.id);
+  }
+}
+
+function editedCount() {
+  return ANCHORS.filter(a => Number.isFinite(anchorOverride[a.id])).length;
+}
+
+function updateAnchorHint() {
+  const n = editedCount();
+  anchorHintEl.innerHTML = n
+    ? `<b>${n}개</b> 값을 사용자 입력으로 덮어썼습니다. 브라우저에 저장됩니다.`
+    : '전부 문헌 기본값입니다 (Stephan &amp; Simpson 메타분석 등 성인 평균 근사).';
+}
+
+/**
+ * 값을 고치면 더 이상 "문헌 평균"이 아니므로 고지 문구를 바꿉니다.
+ * 사용자가 입력한 값을 문헌값이라고 계속 주장하면 사실과 다릅니다.
+ */
+function updateDisclaimer() {
+  const n = editedCount();
+  document.getElementById('dcSource').innerHTML = n
+    ? `레이어 두께는 문헌 계측점(FSTT) 평균 + <b>사용자 입력 계측값 ${n}개</b>입니다.`
+    : '레이어 두께는 문헌 계측점(FSTT) 평균이며 개인 CT 계측이 아닙니다.';
+}
+
+/**
+ * 선택한 계측점 위치에 마커. 좌우 항목은 두 개, 정중선은 하나.
+ *
+ * basePos(원본 좌표) 가 아니라 변형된 표면 좌표를 읽습니다. 사진 모드는 얼굴을
+ * z=0 으로 평면화하므로 basePos 를 쓰면 마커가 얼굴에서 떠 보입니다.
+ */
+function updateMarkers() {
+  const a = ANCHORS.find(x => x.id === state.markerAnchor);
+  const lms = a && state.loaded ? anchorLms(a) : [];
+  const r = Math.max(0.4, state.faceW * 0.016);
+  const pos = faceGeo.attributes.position.array;
+
+  markers.forEach((m, i) => {
+    const lm = lms[i];
+    m.visible = lm !== undefined && lm < NUM_LM;
+    if (!m.visible) return;
+    m.position.set(pos[lm * 3], pos[lm * 3 + 1], pos[lm * 3 + 2]);
+    m.scale.setScalar(r);
+  });
+}
+
+document.getElementById('btnAnchorReset').addEventListener('click', () => {
+  anchorOverride = {};
+  saveOverrides();
+  for (const a of ANCHORS) anchorInputs[a.id].value = a.t.toFixed(1);
+  refreshAnchorRows();
+  updateAnchorHint();
+  updateDisclaimer();
+  if (!state.loaded) return;
+  buildThickness();
+  updateThickness();
+  rebuild();
+});
+
+document.getElementById('btnAnchorCopy').addEventListener('click', async () => {
+  const obj = {};
+  for (const a of ANCHORS) obj[a.id] = anchorVal(a);
+  const text = JSON.stringify(obj, null, 2);
+  try {
+    await navigator.clipboard.writeText(text);
+    anchorHintEl.textContent = `계측값 ${ANCHORS.length}개를 클립보드에 복사했습니다.`;
+  } catch {
+    // 클립보드 권한이 없는 환경 — 콘솔로 대체 (조용히 실패하면 사용자가 원인을 모름)
+    console.log(text);
+    anchorHintEl.textContent = '클립보드 접근이 막혀 콘솔에 출력했습니다.';
+  }
+});
+
+loadOverrides();
+buildAnchorPanel();
+updateDisclaimer();
+
+// ── 껍질 벗기기 / 입력 방향 ─────────────────────────────────
+segPeel.addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn || !state.loaded) return;
+  state.peel = btn.dataset.peel;
+  // 레이어는 3D 모델 뷰에서만 의미가 있으므로 자동 전환
+  if (state.peel !== 'surface' && state.view !== 'model') {
+    state.view = 'model';
+    [...document.getElementById('segView').children]
+      .forEach(b => b.classList.toggle('on', b.dataset.view === 'model'));
+    applyView();          // 내부에서 applyPeel() 호출
+  } else {
+    applyPeel();
+  }
+});
+
+segDir.addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  state.inverseInput = btn.dataset.inv === '1';
+  [...segDir.children].forEach(b => b.classList.toggle('on', b === btn));
+  updateDirHint();
+  for (const op of OPS) updateOpLabel(op, opRows[op.id].val, opRows[op.id].der);
+  updateReadout();
+  rebuild();
+});
+
+function updateDirHint() {
+  dirHintEl.innerHTML = state.inverseInput
+    ? '슬라이더 = <b>원하는 표면 변화</b>. 그것을 만들기 위해 필요한 시술량을 역산합니다. (환자 입력)'
+    : '슬라이더 = <b>시술량</b>(보형물 삽입 두께·절골량). 표면 변화는 연조직이 흡수해 더 작게 나옵니다. (의사 입력)';
+}
+updateDirHint();
+
+// ── 슬라이더 ────────────────────────────────────────────────
+const opsEl = document.getElementById('ops');
+const opRows = {};
+
+for (const op of OPS) {
+  const row = document.createElement('div');
+  row.className = 'op';
+  row.innerHTML = `
+    <label>
+      <span class="name">${op.label}${op.depth ? '<span class="tag">측면</span>' : ''}</span>
+      <span class="val zero">0.0 mm</span>
+    </label>
+    <input type="range" min="-100" max="100" value="0" step="1">
+    <div class="der hidden"></div>
+  `;
+  const slider = row.querySelector('input');
+  const val = row.querySelector('.val');
+  const der = row.querySelector('.der');
+
+  slider.addEventListener('input', () => {
+    state.amounts[op.id] = slider.value / 100;
+    updateOpLabel(op, val, der);
+    updateReadout();
+    rebuild();
+  });
+
+  // 조작 중인 시술의 대상 뼈를 골격 층에서 강조합니다 — 어떤 뼈를 건드리는
+  // 시술인지가 상담에서 가장 먼저 나오는 질문입니다.
+  const hot = on => {
+    if (!op.seg) return;
+    state.hotSeg = on ? op.seg : null;
+    if (state.peel === 'bone') applyPeel();
+  };
+  slider.addEventListener('pointerdown', () => hot(true));
+  slider.addEventListener('pointerup',   () => hot(false));
+  slider.addEventListener('focus',       () => hot(true));
+  slider.addEventListener('blur',        () => hot(false));
+
+  opsEl.appendChild(row);
+  opRows[op.id] = { row, slider, val, der };
+}
+
+function updateOpLabel(op, valEl, derEl) {
+  const slider = opSliderMm(op);
+  valEl.textContent = (slider >= 0 ? '+' : '') + slider.toFixed(1) + ' mm';
+  valEl.classList.toggle('zero', Math.abs(slider) < 0.05);
+
+  if (Math.abs(slider) < 0.05) { derEl.classList.add('hidden'); return; }
+  const proc = Math.abs(opProcMm(op));
+  const surf = Math.abs(opSurfaceMm(op));
+  derEl.textContent = state.inverseInput
+    ? `표면 ${surf.toFixed(1)}mm 를 위해 ${PROC_LABEL[op.layer] || '시술'} ${proc.toFixed(1)}mm 필요 (반영률 ${op.ratio.toFixed(2)})`
+    : `${PROC_LABEL[op.layer] || '시술'} ${proc.toFixed(1)}mm → 표면 ${surf.toFixed(1)}mm (반영률 ${op.ratio.toFixed(2)})`;
+  derEl.classList.remove('hidden');
+}
+
+// ── 의사용 리드아웃 (수술 계획서) ──────────────────────────
+/*
+  규제 대응 고지. 사용자 결정: "후보 제시 + 의사 검토 명시".
+  자동 추천으로 읽히면 디지털의료제품법상 의료기기 소프트웨어 판단 위험이 있으므로
+  계획서에는 항상 이 문구가 함께 붙습니다.
+*/
+const NOTICE = `
+  <div id="notice">
+    이 목록은 조작한 형태 변화에 해당하는 <b>시술 후보</b>이며 <b>추천이 아닙니다</b>.
+    적용 가능성·방법·안전성은 전문의 진료로만 결정됩니다.
+    수치는 문헌 평균 연조직 반영률에 기반한 추정치입니다.
+  </div>`;
+
+function updateReadout() {
+  if (!state.loaded) { readoutEl.innerHTML = '사진을 먼저 올려주세요.'; return; }
+
+  const items = OPS
+    .filter(op => Math.abs(opSliderMm(op)) >= 0.1)
+    .map(op => {
+      const proc = opProcMm(op);
+      const surf = opSurfaceMm(op);
+      const grow = op.mode === 'push' ? proc >= 0 : proc < 0;
+      const p = op.plan || {};
+      const act = PROC_LABEL[op.layer] || '시술';
+      // 대상 뼈 이름. 세그먼트가 없는 시술(연골·연조직)은 그 사실을 밝힙니다.
+      const bones = (op.seg || [])
+        .map(id => BONE_SEGMENTS.find(S => S.id === id))
+        .filter(Boolean).map(S => S.ko).join(' · ');
+      return `
+        <div class="plan">
+          <div class="ph"><b>${op.note}</b><span class="pl">${LAYER_LABEL[op.layer] || ''}</span></div>
+          <div class="pd">대상: ${bones || '연골·연조직 (골격 조작 없음)'}</div>
+          <div>${act} <span class="pm">${Math.abs(proc).toFixed(1)}mm</span>
+               → 표면 <span class="pm">${Math.abs(surf).toFixed(1)}mm</span> ${grow ? '증대' : '축소'}
+               <span class="pd">(연조직 반영률 ${op.ratio.toFixed(2)})</span></div>
+          ${p.material ? `<div class="pd">재료·규격: ${p.material}</div>` : ''}
+          ${p.approach ? `<div class="pd">접근: ${p.approach}</div>` : ''}
+          <div class="pd">예측 오차 ±1.5mm${p.recovery ? ' · ' + p.recovery : ''}</div>
+          ${p.risk ? `<div class="pd">리스크: ${p.risk}</div>` : ''}
+        </div>`;
+    });
+
+  readoutEl.innerHTML =
+    (items.length ? items.join('') : '<div class="pd">조작된 항목이 없습니다.</div>') + NOTICE;
+}
+
+// ── 활성화 ──────────────────────────────────────────────────
+function enableUI(on) {
+  for (const id in opRows) opRows[id].row.classList.toggle('enabled', on);
+  for (const id of ['btnBefore', 'btnReset', 'btnSave', 'btnNew',
+                    'tgRegion', 'tgPoints', 'tgLines']) {
+    document.getElementById(id).disabled = !on;
+  }
+  updateReadout();
+}
+enableUI(false);
+
+// ── 보기 모드 전환 ──────────────────────────────────────────
+document.getElementById('segView').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  state.view = btn.dataset.view;
+  [...e.currentTarget.children].forEach(b => b.classList.toggle('on', b === btn));
+  applyView();
+});
+
+document.getElementById('segMat').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  state.material = btn.dataset.mat;
+  [...e.currentTarget.children].forEach(b => b.classList.toggle('on', b === btn));
+  if (state.view === 'model') faceMesh.material = materials[state.material];
+});
+
+// ── 원본 보기 (누르고 있는 동안) ────────────────────────────
+const btnBefore = document.getElementById('btnBefore');
+function showBefore(on) {
+  if (state.showBefore === on) return;
+  state.showBefore = on;
+  btnBefore.classList.toggle('primary', on);
+  rebuild();
+}
+btnBefore.addEventListener('pointerdown', () => showBefore(true));
+addEventListener('pointerup', () => showBefore(false));
+btnBefore.addEventListener('pointerleave', () => showBefore(false));
+
+// ── 리셋 / 저장 / 새 사진 ──────────────────────────────────
+document.getElementById('btnReset').addEventListener('click', () => {
+  for (const op of OPS) {
+    state.amounts[op.id] = 0;
+    opRows[op.id].slider.value = 0;
+    updateOpLabel(op, opRows[op.id].val, opRows[op.id].der);
+  }
+  updateReadout();
+  rebuild();
+});
+
+document.getElementById('btnSave').addEventListener('click', () => {
+  renderer.render(scene, camera);
+  const a = document.createElement('a');
+  a.download = 'simulation.png';
+  a.href = renderer.domElement.toDataURL('image/png');
+  a.click();
+});
+
+document.getElementById('btnNew').addEventListener('click', () => {
+  state.loaded = false;
+  faceMesh.visible = false;
+  backdrop.visible = false;
+  state.isolated = null;
+  state.peel = 'surface';
+  // 계측점 입력값(anchorOverride)은 사진과 무관하므로 유지합니다. 화면 표시만 끕니다.
+  state.markerAnchor = null;
+  state.hotSeg = null;
+  refreshAnchorRows();
+  updateMarkers();
+  legendEl.innerHTML = '';
+  thickEl.classList.add('hidden');
+  applyOverlay();
+  applyPeel();
+  enableUI(false);
+  startEl.classList.remove('hidden');
+  setStatus('');
+});
+
+/* ══════════════════════════════════════════════════════════════
+   입력 — 사진 업로드
+   ══════════════════════════════════════════════════════════════ */
+
+function handleFile(file) {
+  if (!file || !file.type.startsWith('image/')) {
+    setStatus('이미지 파일을 올려주세요.', true);
+    return;
+  }
+  const img = new Image();
+  img.onload = () => {
+    loadSource(img, img.naturalWidth, img.naturalHeight);
+    URL.revokeObjectURL(img.src);
+  };
+  img.onerror = () => setStatus('이미지를 읽을 수 없습니다.', true);
+  img.src = URL.createObjectURL(file);
+}
+
+dropEl.addEventListener('click', () => fileEl.click());
+fileEl.addEventListener('change', () => {
+  handleFile(fileEl.files[0]);
+  fileEl.value = '';   // 같은 파일을 다시 선택해도 change 가 발생하도록 초기화
+});
+
+// 시작 화면이 열려 있을 때만 드롭을 받습니다 (로드 후 실수로 떨궈 사진이 바뀌는 것 방지)
+const dropActive = () => !startEl.classList.contains('hidden');
+
+for (const ev of ['dragenter', 'dragover']) {
+  stage.addEventListener(ev, e => {
+    if (!dropActive()) return;
+    e.preventDefault();
+    dropEl.classList.add('over');
+  });
+}
+stage.addEventListener('dragleave', e => {
+  if (e.target === stage) dropEl.classList.remove('over');   // 자식 요소 통과 시 깜빡임 방지
+});
+stage.addEventListener('drop', e => {
+  if (!dropActive()) return;
+  e.preventDefault();
+  dropEl.classList.remove('over');
+  handleFile(e.dataTransfer?.files?.[0]);
+});
+
+/* ══════════════════════════════════════════════════════════════
+   입력 — 카메라 (버튼을 누를 때만 권한 요청)
+   ══════════════════════════════════════════════════════════════ */
+
+let camStream = null;
+
+document.getElementById('btnOpenCam').addEventListener('click', async () => {
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 1280, height: 720, facingMode: 'user' }, audio: false,
+    });
+  } catch (e) {
+    // 카메라는 보안 컨텍스트에서만 열립니다 — https 또는 localhost.
+    // 배포 주소(https)에서도 실패하면 브라우저 권한 차단이 원인입니다.
+    setStatus('카메라를 열 수 없습니다: ' + e.message
+      + (location.protocol === 'https:' || location.hostname === 'localhost'
+          ? '\n브라우저 주소창의 카메라 권한을 확인해 주세요.'
+          : '\nhttps 주소 또는 http://localhost 로 접속해야 합니다.'), true);
+    return;
+  }
+  camVideo.srcObject = camStream;
+  await camVideo.play();
+  camModal.classList.remove('hidden');
+});
+
+function closeCam() {
+  camModal.classList.add('hidden');
+  camStream?.getTracks().forEach(t => t.stop());
+  camStream = null;
+}
+
+document.getElementById('btnCamCancel').addEventListener('click', closeCam);
+
+document.getElementById('btnShoot').addEventListener('click', () => {
+  const w = camVideo.videoWidth, h = camVideo.videoHeight;
+  if (!w) return;
+  // 거울처럼 보이던 화면을 좌우 반전해 실제 방향으로 저장
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  ctx.translate(w, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(camVideo, 0, 0);
+  closeCam();
+  loadSource(cv, w, h);
+});
+
+/* ══════════════════════════════════════════════════════════════ */
+
+resize();
+loop();
+</script>
+</body>
+</html>
