@@ -62,6 +62,9 @@
     font-size: 11px; color: var(--dim); text-align: right; line-height: 1.55;
     max-width: 330px; pointer-events: none;
   }
+  /* 접힌 근거만 클릭을 받습니다. 전체에 auto 를 주면 글자 위에서 회전이 멈춥니다. */
+  #dcMore { pointer-events: auto; margin-top: 3px; }
+  #dcMore > summary { cursor: pointer; display: inline; text-decoration: underline dotted; }
 
   /* ───────── 시작 화면 ───────── */
   #start {
@@ -126,6 +129,10 @@
   .seg { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
   .seg button { border: 0; border-radius: 0; background: transparent; padding: 7px 0; font-size: 12px; }
   .seg button.on { background: var(--accent); color: #06121f; font-weight: 600; }
+  /* 층이 7개라 한 줄에 넣으면 글자가 잘립니다. 줄바꿈을 허용하고 칸 사이에 선을 넣습니다. */
+  .seg.wrap { flex-wrap: wrap; gap: 1px; background: var(--line); }
+  .seg.wrap button { flex: 1 0 auto; width: auto; min-width: 54px; background: var(--panel); }
+  .seg.wrap button.on { background: var(--accent); }
 
   .op { margin-bottom: 13px; opacity: .32; pointer-events: none; transition: opacity .15s; }
   .op.enabled { opacity: 1; pointer-events: auto; }
@@ -226,11 +233,20 @@
   <div id="disclaimer">
     해부학 참조 기반 <b>추정 시각화</b>입니다. 실제 수술 결과와 다를 수 있으며,<br>
     시술 판단은 의료진에게 있습니다. 사진은 서버로 전송되지 않습니다.<br>
-    <span id="dcSource">레이어 두께는 문헌 계측점(FSTT) 평균이며 개인 CT 계측이 아닙니다.</span><br>
-    골격은 <b>성형 대상 뼈만</b> 추정 배치한 것으로 두개골 모델이 아닙니다.<br>
-    표면에서 뼈를 예측하는 최고 문헌값도 평균오차 2.46mm (3D 스캔 · 209명 CT
-    기반 통계형상모델)로 임상 허용 오차 1.5mm 에 미달합니다. 사진 1장 기반인
-    이 데모의 오차는 그보다 큽니다.
+    <span id="dcSource">레이어 두께는 문헌 계측점 평균이며 개인 계측값이 아닙니다.</span>
+    <!-- 근거를 접어 둡니다. 펼친 상태로 두면 이 글이 얼굴을 덮어 정작 봐야 할
+         레이어가 안 보였습니다. 내용은 그대로 남겨 둡니다. -->
+    <details id="dcMore">
+      <summary>문헌 근거 · 오차</summary>
+      표피 0.06~0.12mm · 진피 1.0~1.6mm · 안륜근 1.56mm · 교근 9.7mm 는 고주파
+      초음파 문헌 평균이고, 전체 두께는 FSTT 메타분석입니다. 개인의 진피 두께는
+      초음파로만 알 수 있어 이 값은 <b>부위 평균의 배치</b>입니다.<br>
+      지방구획·근육·골격은 <b>성형으로 접근하는 구조만</b> 추정 배치한 것으로
+      해부 모델이 아닙니다.<br>
+      표면에서 뼈를 예측하는 최고 문헌값도 평균오차 2.46mm (3D 스캔 · 209명 CT
+      기반 통계형상모델)로 임상 허용 오차 1.5mm 에 미달합니다. 사진 1장 기반인
+      이 데모의 오차는 그보다 큽니다.
+    </details>
   </div>
 
   <!-- 시작 화면 -->
@@ -298,21 +314,25 @@
 
   <div class="group">
     <div class="title">2. 해부 레이어 (껍질 벗기기)</div>
-    <div class="seg" id="segPeel">
+    <div class="seg wrap" id="segPeel">
       <button data-peel="surface" class="on">표면</button>
-      <button data-peel="skin">피부</button>
-      <button data-peel="fat">지방</button>
-      <button data-peel="smas">근육</button>
+      <button data-peel="epidermis">표피</button>
+      <button data-peel="dermis">진피</button>
+      <button data-peel="fatSup">천층지방</button>
+      <button data-peel="muscle">근육</button>
+      <button data-peel="fatDeep">심부지방</button>
       <button data-peel="bone">골격</button>
     </div>
     <div class="hint" id="peelHint">계측점 두께만큼 표면을 안쪽으로 밀어 만든 <b>추정 레이어</b>입니다. 3D 모델 뷰에서만 보입니다.</div>
   </div>
 
   <div class="group">
-    <div class="title">3. 해부 계측점 (FSTT)</div>
+    <div class="title">3. 해부 계측점 (층별 두께)</div>
     <div class="hint">
-      표면 → 아래 구조까지의 거리(mm). 환자 계측값이 있으면 덮어쓰십시오.
+      계측점 27곳의 층 두께(mm). 환자 계측값(초음파·CT)이 있으면 덮어쓰십시오.
       좌우는 <b>한 값을 양쪽에</b> 적용합니다.<br>
+      <b>열을 골라 한 층씩</b> 편집합니다. 심부지방은 입력하지 않습니다 —
+      전체에서 나머지로 계산합니다.<br>
       <b>행을 눌러 마커로 위치를 먼저 확인</b>하세요 — 값보다 랜드마크 인덱스가 더 큰 오차원입니다.
     </div>
     <div id="anchors"></div>
@@ -332,6 +352,31 @@
     <div class="hint" id="dirHint"></div>
     <div style="height:10px"></div>
     <div id="ops"></div>
+  </div>
+
+  <div class="group">
+    <div class="title">5. 시간축 — n년 후 노화</div>
+    <div class="op">
+      <label>
+        <span class="name">현재 나이</span>
+        <span class="val" id="ageVal">30 세</span>
+      </label>
+      <input id="inAge" type="range" min="15" max="80" value="30" step="1" disabled>
+    </div>
+    <div class="op">
+      <label>
+        <span class="name">경과 년수</span>
+        <span class="val zero" id="yearsVal">지금</span>
+      </label>
+      <input id="inYears" type="range" min="0" max="30" value="0" step="1" disabled>
+    </div>
+    <div class="hint">
+      노화를 표면 워프로 만들지 않습니다. <b>층 두께가 줄고 골흡수가 일어난 결과로</b>
+      표면이 물러납니다 — 진피 −6%/10년(계측치), 심부지방 위축, 안와연·이상구·prejowl
+      흡수. 나이를 함께 받는 이유는 노화가 선형이 아니기 때문입니다(40대부터 가속).
+      <b>3D 모델 전용</b>이며(사진 격자에는 층이 없습니다) 슬라이더를 만지면 자동 전환됩니다.
+      주름·색소는 그리지 않고 글로만 보고합니다.
+    </div>
   </div>
 
   <div class="group">
@@ -425,18 +470,23 @@ const OPS = [
            recovery:'부종 4주 · 완성 6개월', risk:'골 미융합 · 신경 손상 · 하순 하강' } },
 
   { id:'cheek',    label:'광대 축소',   anchors:[234,454], mode:'contract',               sigma:0.22, mmMax:6,
-    layer:'bone', ratio:0.75, note:'광대 축소 절골', seg:['zygomaBody','zygomaArch'],
+    // 중안면 천층지방을 함께 지정합니다 — 광대를 깎으면 그 위에 얹혀 있던
+    // malar fat pad 가 받칠 것을 잃습니다. risk 의 "연조직 처짐"이 이 구획입니다.
+    layer:'bone', ratio:0.75, note:'광대 축소 절골', seg:['zygomaBody','zygomaArch','cheekSupMed'],
     plan:{ material:'없음 — 관골체·관골궁 절골 후 내측 이동·고정', approach:'구강내 + 이전측두 절개 · 금속판 고정',
            recovery:'부종 4~6주 · 완성 6개월', risk:'연조직 처짐 · 좌우 비대칭 · 골 미융합' } },
 
   { id:'jaw',      label:'사각턱 축소', anchors:[172,397], mode:'contract',               sigma:0.22, mmMax:8,
-    layer:'bone', ratio:0.55, note:'하악각 절골 (+ 교근 축소)', seg:['gonialAngle','ramus'],
+    // 교근을 함께 지정합니다 — 반영률 0.55 의 원인이 그 두께(이완 9.7mm)이므로,
+    // 근육 층으로 넘기면 왜 뼈를 8mm 깎아도 표면이 4mm 만 줄어드는지가 눈에 보입니다.
+    layer:'bone', ratio:0.55, note:'하악각 절골 (+ 교근 축소)', seg:['gonialAngle','ramus','masseter'],
     plan:{ material:'없음 — 하악각 곡선 절골 · 외측 피질골 절제', approach:'구강내 절개',
            recovery:'부종 6주 · 완성 6~12개월', risk:'교근 두께가 커 표면 반영 낮음 · 신경 손상 · 볼처짐' } },
 
   { id:'forehead', label:'이마 볼륨',   anchors:[10],      mode:'push',     dir:[0,0,1],  sigma:0.30, mmMax:5, depth:true,
     frontal:{ mode:'contract',               k:-0.20 },    // 음수 = 바깥으로 확장 (이마가 넓어 보임)
-    layer:'fat', ratio:0.90, note:'이마 볼륨 (필러 / 지방이식)', seg:['frontal'],
+    // 주입 대상은 뼈가 아니라 이마 중앙 천층지방 구획입니다.
+    layer:'fat', ratio:0.90, note:'이마 볼륨 (필러 / 지방이식)', seg:['frontal','foreheadC'],
     plan:{ material:'HA 필러 기준. 자가지방이식은 생착률 약 45% → 주입량 약 2배 필요',
            approach:'피하 또는 골막상 주입', recovery:'부종 1주 · 완성 1~3개월',
            risk:'혈관 폐색(실명 보고) · 불균일 · 흡수로 인한 재시술' } },
@@ -552,20 +602,221 @@ const anchorLms = a => Array.isArray(a.lm) ? a.lm : [a.lm];
   경고를 내며 메쉬가 통째로 사라집니다. 화면만 보면 원인을 찾을 수 없으므로
   값을 읽는 지점에서 막습니다.
 */
-const ANCHOR_STORE_KEY = 'faceAnchors.v1';
+// v2 = 층별 열이 생겨 키가 '계측점id:열' 로 바뀌었습니다. v1 값은 t 열로 이관합니다.
+const ANCHOR_STORE_KEY = 'faceAnchors.v2';
+const ANCHOR_STORE_KEY_V1 = 'faceAnchors.v1';
 const T_MIN_MM = 0.5, T_MAX_MM = 40;
 let anchorOverride = {};
 
-const clampT = v => Math.min(T_MAX_MM, Math.max(T_MIN_MM, v));
+/*
+  LAYER_T — 계측점별 층 두께, 단위 mm. 키는 ANCHORS 의 id.
+
+  이전에는 층 두께를 t 하나에 고정 비율을 곱해 만들었습니다.
+
+      skin = min(1.8, t * 0.25)
+      fat  = skin + (t - skin) * 0.55
+      smas = t - 0.5
+
+  틀린 모델입니다. 피부 두께는 전체 두께에 비례하지 않습니다 — 부위별 절대값
+  입니다. 볼(t=22mm)에서 피부가 5.5mm 가 될 이유가 없고, 눈꺼풀(t=2mm)에서
+  0.5mm 가 될 이유도 없습니다(실제 눈꺼풀 진피도 1mm 는 됩니다). 게다가
+  표피/진피 구분이 없어 진피에 작용하는 시술(레이저·스킨부스터·리프팅)을
+  설명할 수 없고, 지방과 근육이 "나머지" 라서 구획도 근육 이름도 없었습니다.
+
+  그래서 네 층은 문헌 절대값으로 바꿉니다.
+    ep  표피   0.06 ~ 0.12mm   (65.9±14.4 ~ 120.9±44.7 μm)
+    de  진피   1.0  ~ 1.6mm    (1150±217 ~ 1498±389 μm)
+    sf  천층지방                (이마 1.99mm. 비배<안와상<이마<측두<볼<안와하<구강주위)
+    mu  근육                    (안륜근 1.56±0.45 / 교근 이완 9.7±1.5)
+
+  심부지방(df)만 나머지로 둡니다. 피부·근육 두께는 사람마다 크게 다르지
+  않지만 마른 얼굴과 볼륨 있는 얼굴의 차이는 대부분 지방량이므로, 지방을
+  종속변수로 두는 것이 편법이 아니라 해부학적으로 맞는 선택입니다.
+
+  출처: 고주파 초음파 안면 피부·지방·근육 계측 문헌의 성인 평균 근사치.
+  개인 계측값이 아닙니다 — 개인의 진피 두께는 초음파로만 알 수 있습니다.
+*/
+const LAYER_T = {
+  // ── 정중선 ──
+  supraglabella: { ep:0.09, de:1.35, sf:1.9, mu:0.9 },   // 전두근은 얇습니다
+  glabella:      { ep:0.09, de:1.30, sf:1.6, mu:1.6 },   // 비근·미간근
+  nasion:        { ep:0.08, de:1.20, sf:2.0, mu:1.5 },
+  nasaleUp:      { ep:0.08, de:1.10, sf:1.0, mu:0.6 },
+  rhinion:       { ep:0.08, de:1.05, sf:0.7, mu:0.4 },   // 비부 피부 최박점
+  pronasale:     { ep:0.09, de:1.30, sf:0.4, mu:0.3 },   // 코끝은 피지선이 많아 두꺼움
+  acanthion:     { ep:0.11, de:1.40, sf:2.5, mu:3.0 },   // 상순비익거근
+  philtrum:      { ep:0.11, de:1.40, sf:2.0, mu:4.0 },   // 구륜근
+  labSup:        { ep:0.12, de:1.45, sf:1.5, mu:6.0 },   // 표피 최후 부위 · 입술은 대부분 근육
+  labInf:        { ep:0.12, de:1.50, sf:1.6, mu:6.0 },
+  supramentale:  { ep:0.11, de:1.45, sf:1.8, mu:4.0 },   // 이근
+  pogonion:      { ep:0.11, de:1.50, sf:2.0, mu:3.5 },
+  gnathion:      { ep:0.10, de:1.40, sf:1.8, mu:2.0 },
+
+  // ── 좌우 (양쪽 동일) ──
+  frontalLat:    { ep:0.07, de:1.15, sf:2.0, mu:0.8 },   // 진피 최박 부위
+  supraorbital:  { ep:0.08, de:1.30, sf:1.4, mu:1.6 },   // 안륜근 + ROOF
+  orbitLat:      { ep:0.07, de:1.10, sf:1.2, mu:1.6 },
+  infraorbital:  { ep:0.08, de:1.15, sf:1.0, mu:1.56 },  // 안륜근 1.56±0.45 · 나머지 = SOOF
+  eyelid:        { ep:0.07, de:1.00, sf:0.3, mu:1.56 },  // 합이 예산을 넘어 압축됩니다 (아래 k)
+  zygomaBody:    { ep:0.09, de:1.35, sf:3.0, mu:2.0 },   // 관골근
+  zygion:        { ep:0.08, de:1.25, sf:2.0, mu:1.5 },
+  archMid:       { ep:0.08, de:1.25, sf:2.0, mu:1.2 },
+  temple:        { ep:0.08, de:1.25, sf:2.4, mu:4.0 },   // 측두근 — 측두와를 채웁니다
+  supraCanine:   { ep:0.10, de:1.40, sf:2.5, mu:2.5 },
+  buccal:        { ep:0.10, de:1.45, sf:5.0, mu:2.0 },   // 나머지 13mm → 협부지방체
+  ramus:         { ep:0.09, de:1.35, sf:2.0, mu:9.7 },   // 교근 이완 9.7±1.5
+  gonion:        { ep:0.09, de:1.35, sf:2.0, mu:9.0 },   // 교근이 예산을 거의 다 씁니다
+  mandBody:      { ep:0.10, de:1.40, sf:2.2, mu:3.0 },
+};
+
+/** 편집 가능한 두께 열. min/max 는 입력 가드용 — 층 순서가 뒤집히지 않게 합니다. */
+const T_COLS = [
+  { key:'ep', label:'표피',     min:0.02, max: 0.5 },
+  { key:'de', label:'진피',     min:0.30, max: 4.0 },
+  { key:'sf', label:'천층지방', min:0,    max:25.0 },
+  { key:'mu', label:'근육',     min:0,    max:20.0 },
+  { key:'t',  label:'전체(뼈)', min:T_MIN_MM, max:T_MAX_MM },
+  // 노화율. 두께가 아니라 "10년당 변화량" 이므로 단위가 다릅니다 (아래 AGING_T).
+  { key:'br', label:'골흡수/10년', min:0, max:3.0 },
+  { key:'ds', label:'하강/10년',   min:0, max:3.0 },
+];
+
+/** 골막 두께. 뼈 바로 위의 얇은 막이라 부위 차가 거의 없어 상수로 둡니다. */
+const PERI_MM = 0.5;
+
+/*
+  ── 노화 (시간축) ──────────────────────────────────────────────
+
+  노화를 표면 워프로 만들지 않습니다. 층 두께가 변하고, 그 결과로 표면이
+  뒤로 물러납니다. 뼈가 고정 기준이고 표면은 연조직 위에 얹혀 있으므로,
+
+      Δsoft = Δ표피 + Δ진피 + Δ천층지방 + Δ근육 + Δ심부지방   (≤ 0)
+      br    = 골흡수량 (법선 안쪽)
+      S     = br - Δsoft      표면 후퇴량 (법선 안쪽)
+      t'    = t + Δsoft       새 전체 두께 (br 은 표면·뼈가 같이 움직여 상쇄)
+
+  검산: 뼈는 basePos 에서 S + t' = t + br 깊이에 놓입니다. 즉 흡수량만큼만
+  안으로 들어갑니다. rebuild() 의 레이어 루프는 변형된 표면이 아니라 basePos
+  에서 층을 놓으므로, S 를 표면 루프와 레이어 루프 양쪽에 넣어야 이 식이
+  성립합니다. 한쪽만 넣으면 나이를 먹을수록 두개골이 커집니다.
+
+  근거 강도가 다른 두 종류를 섞어 씁니다. 화면에도 구분해 적습니다.
+
+    강 (계측치)  진피 10년당 약 -6% (남녀 모두, 초음파). 표피는 연령 변화가
+                 뚜렷하지 않아 0 입니다 — 0 도 정보입니다.
+    중 (계측치)  두개골 230례. 안와 높이 +0.6mm/10년 · 안와 폭 +0.9mm/10년 ·
+                 이상구 면적 +14.8% · 상악 M1 높이 -1.7mm/10년 ·
+                 하악지 높이 -1.8mm/10년.
+    약 (추정치)  심부지방이 천층보다 백분율 감소가 크다(11.3년 종단연구),
+                 75세 이후 심부 손실이 천층의 2배 — 정성 소견뿐이고 mm/년
+                 수치가 문헌에 없습니다.
+
+  두개골 계측값은 "랜드마크 사이의 선형 거리" 이고 우리가 필요한 것은 "법선
+  방향 후퇴량" 입니다. 그대로 옮기면 범주 오류이므로, 절대값은 계측치에서
+  자릿수만 빌리고 부위별 상대 강도는 문헌의 정성 순위를 따릅니다.
+  최대 흡수 부위 = 안와연 상내측·하외측 / 이상구 주변 상악 / prejowl 하악.
+  전두골과 관골체는 안정합니다.
+*/
+
+/** 층별 상대 감소율 (/10년, accel 1.0 기준). 심부지방이 지배항입니다. */
+const AGING_RATE = { ep: 0, de: -0.06, sf: 0, mu: -0.03, df: -0.08 };
+
+/*
+  계측점별 노화율. 단위는 mm/10년 (accel 1.0 기준).
+    br  골흡수 (법선 안쪽)
+    ds  하강 (-y). 문헌에 mm/년 수치가 없어, 임상 서술(30대 미미 / 40대 뚜렷 /
+        50대 두드러짐)에 자릿수를 맞춘 추정치입니다.
+  천층지방은 위축보다 하강이 주된 변화이므로 AGING_RATE.sf = 0 이고 이 ds 가
+  그 역할을 합니다.
+*/
+const AGING_T = {
+  // ── 정중선 ──
+  supraglabella: { br:0,    ds:0    },   // 전두골 안정
+  glabella:      { br:0,    ds:0.2  },
+  nasion:        { br:0.10, ds:0.2  },
+  nasaleUp:      { br:0.30, ds:0.2  },
+  rhinion:       { br:0.20, ds:0.3  },
+  pronasale:     { br:0,    ds:0.5  },   // 연골 — 뼈 없음. 코끝 처짐
+  acanthion:     { br:0.50, ds:0.4  },   // 이상구 확대 — 최대 흡수 부위
+  philtrum:      { br:0.50, ds:0.4  },   // 상악 치조골 흡수
+  labSup:        { br:0.50, ds:0.5  },   // 인중이 길어집니다
+  labInf:        { br:0.40, ds:0.4  },
+  supramentale:  { br:0.35, ds:0.3  },
+  pogonion:      { br:0.20, ds:0.2  },
+  gnathion:      { br:0.15, ds:0.15 },
+
+  // ── 좌우 (양쪽 동일) ──
+  frontalLat:    { br:0,    ds:0.1  },
+  supraorbital:  { br:0.35, ds:0.6  },   // 안와 상내측 — 최대 흡수 · 눈썹 하강
+  orbitLat:      { br:0.30, ds:0.7  },   // 안와 하외측 — 최대 흡수
+  infraorbital:  { br:0.40, ds:0.8  },
+  eyelid:        { br:0.30, ds:0.5  },
+  zygomaBody:    { br:0.10, ds:1.0  },   // 관골체는 안정 · 그 위 malar pad 가 하강
+  zygion:        { br:0.05, ds:0.7  },
+  archMid:       { br:0.05, ds:0.4  },
+  temple:        { br:0.05, ds:0.3  },
+  supraCanine:   { br:0.45, ds:1.1  },
+  buccal:        { br:0.20, ds:1.2  },   // 볼처짐
+  ramus:         { br:0.15, ds:0.5  },
+  gonion:        { br:0.20, ds:0.9  },
+  mandBody:      { br:0.35, ds:1.3  },   // prejowl 흡수 + 턱살 — 하강 최대
+};
+
+const AGE_MIN = 15, AGE_MAX = 80, YEARS_MAX = 30;
+
+/*
+  노화는 선형이 아닙니다. malar fat pad 하강은 30대에 미미하고 40대에 뚜렷하며
+  50대에 두드러진다는 임상 서술을 계수로 옮긴 것입니다. 25→35 와 55→65 를 같은
+  값으로 만들면 그 자체가 거짓이므로 "현재 나이" 를 함께 받습니다.
+*/
+const agingAccel = age => age < 30 ? 0.4 : age < 40 ? 0.7 : age < 50 ? 1.0
+                        : age < 60 ? 1.4 : 1.8;
+
+/**
+ * 유효 10년 수. 30세→60세면 (0.7×10 + 1.0×10 + 1.4×10) / 10 = 3.1 입니다.
+ * 정점 루프가 아니라 최대 30회 루프이므로 스칼라 하나로 끝납니다.
+ */
+function effDecades() {
+  let a = 0;
+  for (let j = 0; j < state.years; j++) a += agingAccel(state.age + j);
+  return a / 10;
+}
+
+const colOf = key => T_COLS.find(c => c.key === key);
+const clampCol = (key, v) => {
+  const c = colOf(key);
+  return Math.min(c.max, Math.max(c.min, v));
+};
+
+/**
+ * 계측점의 문헌 기본값. t 는 ANCHORS 에, 두께는 LAYER_T 에, 노화율은 AGING_T 에
+ * 있습니다. 표를 나눈 이유는 LAYER_T 가 "두께(mm)" 표라는 의미를 지키기 위해서입니다.
+ */
+function anchorBase(a, key) {
+  if (key === 't') return a.t;
+  return LAYER_T[a.id]?.[key] ?? AGING_T[a.id]?.[key] ?? 0;
+}
+
+/** 계측점의 유효 두께(mm). 사용자 입력이 있으면 그 값, 없으면 문헌 기본값. */
+function anchorVal(a, key) {
+  const v = anchorOverride[`${a.id}:${key}`];
+  return Number.isFinite(v) ? v : anchorBase(a, key);
+}
 
 function loadOverrides() {
+  anchorOverride = {};
+  const put = (id, key, raw) => {
+    const v = parseFloat(raw);
+    if (Number.isFinite(v)) anchorOverride[`${id}:${key}`] = clampCol(key, v);
+  };
   try {
-    const raw = localStorage.getItem(ANCHOR_STORE_KEY);
-    const obj = raw ? JSON.parse(raw) : {};
-    anchorOverride = {};
-    for (const a of ANCHORS) {
-      const v = parseFloat(obj[a.id]);
-      if (Number.isFinite(v)) anchorOverride[a.id] = clampT(v);
+    const obj = JSON.parse(localStorage.getItem(ANCHOR_STORE_KEY) || '{}');
+    for (const a of ANCHORS) for (const c of T_COLS) put(a.id, c.key, obj[`${a.id}:${c.key}`]);
+    // v2 에 아무것도 없을 때만 v1(t 열 전용)을 읽습니다 — 이미 v2 를 쓰기 시작했다면
+    // 옛 값이 새 값을 덮어써서는 안 됩니다.
+    if (!Object.keys(anchorOverride).length) {
+      const old = JSON.parse(localStorage.getItem(ANCHOR_STORE_KEY_V1) || '{}');
+      for (const a of ANCHORS) put(a.id, 't', old[a.id]);
     }
   } catch { anchorOverride = {}; }
 }
@@ -574,29 +825,6 @@ function saveOverrides() {
   try { localStorage.setItem(ANCHOR_STORE_KEY, JSON.stringify(anchorOverride)); }
   catch { /* 시크릿 모드 등 — 저장 실패해도 동작은 계속 */ }
 }
-
-/** 계측점의 유효 두께(mm). 사용자 입력이 있으면 그 값, 없으면 문헌 기본값. */
-function anchorVal(a) {
-  const v = anchorOverride[a.id];
-  return Number.isFinite(v) ? v : a.t;
-}
-
-/*
-  해부 레이어 — 표면에서 안쪽 순서. depth(t) 는 그 층의 하단면 깊이(mm).
-  피부는 부위에 관계없이 얇으므로(1.5~2mm) 상한을 둡니다.
-  근육 층 하단은 뼈 바로 위(골막)까지이므로 t 에서 0.5mm 만 뺍니다.
-*/
-const SKIN_MAX_MM = 1.8;
-const skinDepth = t => Math.min(SKIN_MAX_MM, t * 0.25);
-
-const LAYERS = [
-  { id:'skin', label:'피부', color:0xE8C0A8, depth: t => skinDepth(t) },
-  { id:'fat',  label:'지방', color:0xF2D65C, depth: t => { const k = skinDepth(t); return k + (t - k) * 0.55; } },
-  { id:'smas', label:'근육', color:0xC0392B, depth: t => Math.max(skinDepth(t), t - 0.5) },
-  { id:'bone', label:'골격', color:0xEDE7D9, depth: t => t, segmented:true },
-];
-
-const BONE_LI = LAYERS.findIndex(L => L.segmented);
 
 /*
   ── 골격은 세그먼트, 연조직은 오프셋 ──────────────────────────
@@ -676,7 +904,160 @@ const BONE_SEGMENTS = [
     pick: c => c.reg === 'chin' },
 ];
 
-/** 조작 중인 시술의 대상 뼈 강조색. 뼈 기본색이 밝아 emissive 를 함께 씁니다. */
+/*
+  ── 연조직도 구획으로 ──────────────────────────────────────────
+
+  피부와 골막은 실제로 얼굴 전체를 덮는 연속면이므로 오프셋이 타당합니다.
+  하지만 지방은 격벽으로 나뉜 구획이고 근육은 이름과 방향이 있는 개별
+  구조입니다. "나머지 두께를 균일하게 채운 껍질" 로는 어느 구획에 필러를
+  넣는지, 어느 근육에 보톡스를 놓는지 말할 수 없습니다.
+
+  그래서 지방·근육도 골격과 같은 방식으로 만듭니다 — 구획마다 pick 규칙과
+  자체 삼각형 인덱스. catch-all 규칙을 두지 않으므로 미분류 정점은 자동으로
+  비고, 그 비움이 구획 경계를 만듭니다 (골격의 VOID_DEFS 가 필요 없음).
+
+  판정 컨텍스트 c 는 골격과 완전히 동일합니다: c.reg / c.ax / c.y / c.yOf(lm).
+
+  이 구획들이 골격의 공백을 채웁니다.
+    협부 공백   → 협부지방체(Bichat)
+    측두와 공백 → 측두근
+    안와 공백   → 안륜근 + ROOF/SOOF
+  그리고 하악각 위의 교근 9~10mm 가 화면에 실제로 존재하므로, 뼈를 6mm
+  깎아도 표면이 3mm 만 줄어드는 이유(반영률 0.55)가 눈으로 설명됩니다.
+*/
+
+/** 천층지방 구획 — 피부 바로 아래. 앞 3개를 합친 것이 malar fat pad 입니다. */
+const FAT_SUP_PARTS = [
+  { id:'foreheadC',   ko:'이마 중앙지방', op:'이마 필러',   color:0xF6E07A,
+    pick: c => c.reg === 'forehead' && c.ax < 0.45 },
+  { id:'foreheadL',   ko:'이마 외측지방', op:'이마 필러',   color:0xEFD65F,
+    pick: c => c.reg === 'forehead' },
+  { id:'tempSup',     ko:'측두 천층지방', op:'관자 필러',   color:0xE8CE55,
+    pick: c => c.reg === 'temple' },
+  { id:'infraorbital',ko:'안와하지방',    op:'다크서클',    color:0xF7E9A0,
+    pick: c => c.reg === 'eye' || c.reg === 'iris' || c.reg === 'brow' },
+  { id:'nasalSup',    ko:'비배 천층지방', op:'코 피부 두께', color:0xF2DE8C,
+    pick: c => c.reg === 'nose' },
+  { id:'nasolabial',  ko:'비구순지방',    op:'비구순주름',  color:0xF0D24A,
+    pick: c => c.reg === 'philtrum' || c.reg === 'lips' },
+  // 볼 구획 3개는 내측→외측 순으로 잘립니다. 실측 ax 분포(볼 0.30~0.68)에 맞춘
+  // 경계입니다 — 문헌 그림의 비율을 그대로 쓰면 외측 구획이 0개가 됩니다.
+  { id:'cheekSupMed', ko:'중안면 천층지방', op:'볼처짐 · 실리프팅', color:0xF5DC6B,
+    pick: c => c.reg === 'cheekbone' || (c.reg === 'cheek' && c.ax < 0.45) },
+  { id:'cheekMid',    ko:'중간 볼지방',   op:'—',           color:0xEDD65A,
+    pick: c => c.reg === 'cheek' && c.ax < 0.58 },
+  { id:'cheekLatTemp',ko:'이측두 볼지방', op:'—',           color:0xE3C846,
+    pick: c => c.reg === 'cheek' },
+  { id:'jowl',        ko:'아래턱지방',    op:'턱살',        color:0xE6CC52,
+    pick: c => c.reg === 'jaw' },
+  { id:'chinSup',     ko:'턱 천층지방',   op:'—',           color:0xF2DC72,
+    pick: c => c.reg === 'chin' },
+];
+
+/** 표정근·저작근. SMAS 가 이들을 감싸 표면으로 수축을 전달합니다. */
+const MUSCLE_PARTS = [
+  { id:'frontalis',   ko:'전두근',       op:'이마 보톡스',  color:0xC0392B,
+    pick: c => c.reg === 'forehead' },
+  { id:'temporalis',  ko:'측두근',       op:'측두와를 채움', color:0x9E2A1F,
+    pick: c => c.reg === 'temple' },
+  { id:'orbOculi',    ko:'안륜근',       op:'눈가 보톡스',  color:0xD1503C,
+    pick: c => c.reg === 'eye' || c.reg === 'iris' || c.reg === 'brow' },
+  // 코 부위는 랜드마크가 155개나 되어(콧구멍·비주 내부까지) 한 근육에 다 주면
+  // 좁은 근육이 콧등 전체로 번집니다. 미간(위) → 콧방울 옆(측면) → 콧등(나머지).
+  { id:'procerus',    ko:'비근 · 미간근', op:'미간 보톡스',  color:0xB33526,
+    pick: c => c.reg === 'nose' && c.y >= c.yOf(6) },
+  // 0.22 는 실측으로 고른 값입니다. 0.30 으로 하면 미간근이 먼저 위쪽을 가져간 뒤
+  // 남는 띠가 폭 1 정점이 되어 다수결에서 삼각형이 0개가 됩니다.
+  { id:'llsan',       ko:'상순비익거근',  op:'잇몸노출 개선', color:0xC8452F,
+    pick: c => c.reg === 'nose' && c.ax > 0.22 },
+  { id:'nasalis',     ko:'비익근',       op:'콧볼 축소',    color:0xB8402D,
+    pick: c => c.reg === 'nose' },
+  { id:'zygomaticus', ko:'관골근',       op:'스마일 라인',  color:0xD65C45,
+    pick: c => c.reg === 'cheekbone' },
+  { id:'orbOris',     ko:'구륜근',       op:'입술',         color:0xE0644C,
+    pick: c => c.reg === 'lips' || c.reg === 'philtrum' },
+  // 교근은 하악지·하악각을 덮으므로 턱선 전체 + 볼 외측입니다.
+  { id:'masseter',    ko:'교근',         op:'사각턱 보톡스 · 절골 반영률', color:0x8E241A,
+    pick: c => c.reg === 'jaw' || (c.reg === 'cheek' && c.ax > 0.55) },
+  // 볼의 나머지(내측)는 협근입니다. 여기에 구각하제근을 두면 안 됩니다 —
+  // 그 근육은 입꼬리에서 턱으로 내려가는 것이라 볼 중앙이 아닙니다.
+  { id:'buccinator',  ko:'협근',         op:'—',            color:0xC7443A,
+    pick: c => c.reg === 'cheek' },
+  // 이근은 턱 정중선, 구각하제근은 그 외측입니다. 순서를 바꾸면 이근이 턱을 다 먹습니다.
+  { id:'depressor',   ko:'구각하제근',    op:'입꼬리',       color:0xCC4936,
+    pick: c => c.reg === 'chin' && c.ax > 0.38 },
+  { id:'mentalis',    ko:'이근',         op:'턱 보톡스',    color:0xBF3B2A,
+    pick: c => c.reg === 'chin' },
+];
+
+/** 심부지방 — 근육 아래, 뼈 위. 두께는 나머지로 계산되므로 여기서 볼륨이 드러납니다. */
+const FAT_DEEP_PARTS = [
+  { id:'roof',       ko:'ROOF (안륜근하)', op:'눈썹뼈 볼륨', color:0xD9A227,
+    pick: c => c.reg === 'brow' },
+  { id:'soofMed',    ko:'SOOF 내측',      op:'눈밑지방 · 애교살', color:0xE0AE33,
+    pick: c => (c.reg === 'eye' || c.reg === 'iris') && c.ax < 0.55 },
+  { id:'soofLat',    ko:'SOOF 외측',      op:'—',          color:0xCE9820,
+    pick: c => c.reg === 'eye' || c.reg === 'iris' || (c.reg === 'cheekbone' && c.ax > 0.70) },
+  { id:'deepMedMed', ko:'심부중안면 내측', op:'중안면 볼륨', color:0xE5B840,
+    pick: c => c.reg === 'cheek' && c.ax < 0.45 },
+  { id:'deepMedLat', ko:'심부중안면 외측', op:'중안면 볼륨', color:0xD7A62C,
+    pick: c => (c.reg === 'cheek' && c.ax < 0.60) || c.reg === 'cheekbone' },
+  // 골격에서 뼈를 비운 그 자리(VOID_DEFS 의 buccal)와 같은 조건입니다.
+  // 뼈가 없는 곳에 무엇이 있는지가 화면에서 보입니다.
+  { id:'buccalPad',  ko:'협부지방체 (Bichat)', op:'볼지방 제거', color:0xC99114,
+    pick: c => c.reg === 'cheek' && c.ax > 0.60 },
+  { id:'chinDeep',   ko:'심부 턱지방',    op:'—',          color:0xDCAE38,
+    pick: c => c.reg === 'chin' || c.reg === 'jaw' },
+];
+
+/*
+  해부 레이어 — 표면에서 안쪽 순서.
+
+  두께는 더 이상 함수가 아닙니다. buildThickness() 가 계측점 보간과 k 압축을
+  거쳐 layerDepth[i * LAYERS.length + li] 에 각 층의 하단 깊이(mm)를 미리
+  넣어 둡니다. 층 순서가 뒤집히지 않는다는 보장이 그 계산에 들어 있습니다.
+
+  parts 가 있는 층은 구획 메쉬가 대신 그리고, 없는 층은 통짜 오프셋 면입니다.
+*/
+const LAYERS = [
+  { id:'epidermis', label:'표피',     color:0xF7E0CC, col:'ep',
+    hint:'0.06~0.12mm. 형상으로는 거의 안 보이는 게 맞습니다 — 과장하면 그게 거짓이 됩니다. '
+       + '두께는 아래 리드아웃의 숫자로 읽으세요. 가장 두꺼운 곳은 윗입술·턱입니다.' },
+  { id:'dermis',    label:'진피',     color:0xE8A98D, col:'de',
+    hint:'1.0~1.6mm. <b>리프팅·레이저·스킨부스터가 실제로 작용하는 층</b>입니다. '
+       + '전체 두께에 비례하지 않으므로 볼에서도 두꺼워지지 않습니다. '
+       + '최박 = 이마 외측, 최후 = 입꼬리.' },
+  { id:'fatSup',    label:'천층지방', color:0xF2D65C, col:'sf', parts:FAT_SUP_PARTS,
+    hint:'격벽으로 나뉜 구획입니다. 안와하 + 중안면 천층 + 비구순을 합친 것이 '
+       + '<b>malar fat pad</b> — 이것이 처지는 것이 볼처짐·비구순주름입니다. '
+       + '구획 경계가 주름이 생기는 자리입니다.' },
+  { id:'muscle',    label:'근육',     color:0xC0392B, col:'mu', parts:MUSCLE_PARTS,
+    hint:'표정근·저작근. SMAS 가 이들을 감싸 수축을 표면으로 전달합니다. '
+       + '<b>측두근</b>이 골격의 측두와 공백을 채우고, <b>교근</b>(이완 9.7mm)이 '
+       + '하악지를 덮습니다 — 뼈를 깎아도 표면이 덜 줄어드는 이유가 이 두께입니다.' },
+  { id:'fatDeep',   label:'심부지방', color:0xD9A227,           parts:FAT_DEEP_PARTS,
+    hint:'근육 아래·뼈 위. <b>두께를 나머지로 계산합니다</b> — 피부와 근육은 사람마다 '
+       + '크게 다르지 않고, 마른 얼굴과 볼륨 있는 얼굴의 차이는 대부분 지방량이기 '
+       + '때문입니다. <b>협부지방체</b>가 골격의 협부 공백을 정확히 채웁니다.' },
+  { id:'bone',      label:'골격',     color:0xEDE7D9, col:'t',  parts:BONE_SEGMENTS, voids:VOID_DEFS },
+];
+// 골막은 층으로 두지 않습니다. 두께가 0.5mm 라 뼈 표면과 사실상 같은 면이어서
+// 메쉬를 하나 더 만들면 골격 세그먼트와 z-fighting 만 생깁니다. 대신 PERI_MM 을
+// 연조직 예산에서 미리 빼 두고(심부지방 하단과 뼈 사이의 틈이 골막), 두께
+// 리드아웃에서는 숫자 한 줄로 보여 줍니다.
+
+const NL = LAYERS.length;
+const BONE_LI = LAYERS.findIndex(L => L.id === 'bone');
+
+/** part id → 그 part 가 속한 층 인덱스 / part 정의. op.seg 강조와 리드아웃에 씁니다. */
+const PART_LAYER = new Map();
+const PART_BY_ID = new Map();
+LAYERS.forEach((L, li) => (L.parts || []).forEach(P => {
+  PART_LAYER.set(P.id, li);
+  PART_BY_ID.set(P.id, P);
+}));
+
+/** 조작 중인 시술의 대상 구조 강조색. 뼈·지방 기본색이 밝아 emissive 를 함께 씁니다. */
 const BONE_ACCENT    = 0x8fc4ff;
 const BONE_ACCENT_EM = 0x14324f;
 
@@ -711,7 +1092,10 @@ const state = {
   peel: 'surface',      // 'surface' | LAYERS[].id — 껍질 벗기기 단계
   inverseInput: false,  // false = 슬라이더가 시술량, true = 슬라이더가 원하는 표면 변화
   markerAnchor: null,   // 마커로 위치 확인 중인 계측점 id (null = 표시 안 함)
-  hotSeg: null,         // 조작 중인 시술의 대상 뼈 세그먼트 id
+  hotSeg: null,         // 조작 중인 시술의 대상 구조 id (뼈·근육·지방구획)
+  anchorCol: 't',       // 계측점 패널에서 편집 중인 두께 열 (T_COLS[].key)
+  age: 30,              // 현재 나이 — 노화 속도가 나이에 따라 달라지므로 필요합니다
+  years: 0,             // 경과 년수 (0 = 지금). 0 이면 노화 항이 전부 0 입니다
 };
 OPS.forEach(o => state.amounts[o.id] = 0);
 
@@ -848,16 +1232,46 @@ const regionCount = new Array(REGION_DEFS.length).fill(0);
     골격 층 = 성형 대상 뼈 세그먼트 11개. 각자 걸러낸 인덱스를 갖습니다.
     사진 모드는 얼굴 z 를 0 으로 평면화하므로 레이어는 3D 모델 뷰 전용입니다. */
 
-const thickMm = new Float32Array(NUM_LM);          // 정점별 표면→아래 구조 거리 (보간 결과)
+const thickMm = new Float32Array(NUM_LM);          // 정점별 표면→뼈 거리 (FSTT, 보간 결과)
 const baseNormal = new Float32Array(NUM_LM * 3);   // 변형 전 3D 형상의 정점 법선
-const segOf = new Int16Array(NUM_LM).fill(-1);     // 정점 → 뼈 세그먼트 인덱스. -1 = 뼈 없음
-const voidOf = new Int16Array(NUM_LM).fill(-1);    // 정점 → 공백 인덱스. -1 = 공백 아님
+
+// 층별 절대 두께(mm). 문헌값을 계측점에 놓고 같은 방식으로 보간합니다.
+const epMm = new Float32Array(NUM_LM);   // 표피
+const deMm = new Float32Array(NUM_LM);   // 진피
+const sfMm = new Float32Array(NUM_LM);   // 천층지방
+const muMm = new Float32Array(NUM_LM);   // 근육
+const squeeze = new Float32Array(NUM_LM).fill(1);  // 절대값 합이 예산을 넘을 때의 압축 계수 k
+
+/** layerDepth[i*NL + li] = 정점 i 에서 층 li 하단까지의 깊이(mm). 누적값입니다. */
+const layerDepth = new Float32Array(NUM_LM * NL);
+
+/*  노화 계산용. 보간(base) 과 노화 적용(aged) 을 분리해 둡니다. interpolateCol 은
+    호출당 정점×계측점 만큼 할당·정렬을 하므로, 년수만 바뀔 때 다시 돌리지 않습니다.
+    epMm/deMm/sfMm/muMm/thickMm 은 "노화가 적용된 유효값" 입니다 — 그래야 두께 표시와
+    dt = depth/th 가 저절로 노화된 값을 쓰게 됩니다. */
+const ep0 = new Float32Array(NUM_LM);   // 보간 원본 (노화 전)
+const de0 = new Float32Array(NUM_LM);
+const sf0 = new Float32Array(NUM_LM);
+const mu0 = new Float32Array(NUM_LM);
+const t0  = new Float32Array(NUM_LM);
+const br0 = new Float32Array(NUM_LM);   // 골흡수율 (mm/10년)
+const ds0 = new Float32Array(NUM_LM);   // 하강율 (mm/10년)
+
+const retractMm = new Float32Array(NUM_LM);   // 표면 후퇴량 S (법선 안쪽, ≥ 0)
+const descentMm = new Float32Array(NUM_LM);   // 하강량 D (-y, ≥ 0)
+/** 테셀레이션에 연결된 정점만 1. 홍채 468~477 은 0 — 법선도 거리표도 없어 노화를 적용하면 눈에서 떨어집니다. */
+const connected = new Uint8Array(NUM_LM);
+
+/** 정점 → part 인덱스. 층별로 한 장. -1 = 그 층에 구조가 없음(공백) */
+const partOf = LAYERS.map(L => L.parts ? new Int16Array(NUM_LM).fill(-1) : null);
+const voidOf = new Int16Array(NUM_LM).fill(-1);    // 정점 → 골격 공백 인덱스. -1 = 공백 아님
+const segOf = partOf[BONE_LI];                     // 골격 세그먼트는 이름을 따로 둡니다
 
 const layerGroup = new THREE.Group();
 layerGroup.visible = false;
 scene.add(layerGroup);
 
-/** 연조직 층 3장 (피부·지방·근육). 표면 인덱스를 공유합니다. */
+/** 층별 통짜 메쉬. 표면 인덱스를 공유합니다. */
 const layerMeshes = LAYERS.map(L => {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NUM_LM * 3), 3));
@@ -871,26 +1285,34 @@ const layerMeshes = LAYERS.map(L => {
 });
 
 /*
-  골격 세그먼트 메쉬. 위치 버퍼는 골격 층 메쉬(layerMeshes[BONE_LI]) 것을
-  그대로 공유하고 인덱스만 다릅니다 — 정점 좌표를 11번 중복 계산할 이유가 없고,
-  세그먼트끼리 경계에서 정확히 맞물려야 하기 때문입니다.
+  구획·근육·뼈 세그먼트 메쉬. 위치 버퍼는 자기 층의 통짜 메쉬 것을 그대로
+  공유하고 인덱스만 다릅니다 — 정점 좌표를 구획 수만큼 중복 계산할 이유가 없고,
+  구획끼리 경계에서 정확히 맞물려야 하기 때문입니다.
+
+  side: DoubleSide 는 필수입니다. 구획은 열린 조각이라 자유 엣지가 있고,
+  BackSide 를 끄면 그 안쪽이 뚫려 보입니다.
 */
-const bonePosAttr = layerMeshes[BONE_LI].geometry.attributes.position;
-const segMeshes = BONE_SEGMENTS.map(S => {
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', bonePosAttr);
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-    color: S.color, roughness: 0.68, metalness: 0.02,
-    side: THREE.DoubleSide, transparent: true, opacity: 1,
-  }));
-  mesh.frustumCulled = false;
-  mesh.visible = false;
-  layerGroup.add(mesh);
-  return mesh;
+const partMeshes = LAYERS.map((L, li) => {
+  if (!L.parts) return null;
+  const posAttr = layerMeshes[li].geometry.attributes.position;
+  const meshes = L.parts.map(P => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', posAttr);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      color: P.color, roughness: 0.68, metalness: 0.02,
+      side: THREE.DoubleSide, transparent: true, opacity: 1,
+    }));
+    mesh.frustumCulled = false;
+    mesh.visible = false;
+    layerGroup.add(mesh);
+    return mesh;
+  });
+  // 구획이 그 층을 대신하므로 통짜 메쉬는 그리지 않습니다.
+  layerMeshes[li].visible = false;
+  layerMeshes[li].material.visible = false;
+  return meshes;
 });
-// 세그먼트가 골격 층을 대신하므로 통짜 골격 메쉬는 그리지 않습니다.
-layerMeshes[BONE_LI].visible = false;
-layerMeshes[BONE_LI].material.visible = false;
+const segMeshes = partMeshes[BONE_LI];
 
 /** 계측점 위치 확인용 마커. 인덱스가 맞는지는 눈으로만 검증할 수 있습니다. */
 const markerGeo = new THREE.SphereGeometry(1, 16, 12);
@@ -972,6 +1394,18 @@ function buildAnchorDistances() {
     }
     return dist;
   });
+
+  /*  테셀레이션에 연결되지 않은 정점을 표시합니다. 홍채 468~477 이 그렇습니다 —
+      삼각형이 없어 어느 계측점에서도 도달할 수 없고, baseNormal 도 (0,0,1) 로
+      강제됩니다. 이 정점을 노화로 물러나게 하면 주변 눈꺼풀은 실제 법선 방향으로,
+      홍채는 +z 방향으로 움직여 점이 눈에서 떨어집니다. 그래서 노화를 적용하지
+      않습니다. */
+  connected.fill(0);
+  for (let i = 0; i < NUM_LM; i++) {
+    for (let a = 0; a < anchorDist.length; a++) {
+      if (anchorDist[a][i] !== Infinity) { connected[i] = 1; break; }
+    }
+  }
 }
 
 const SHEPARD_K = 4;    // 가중에 참여하는 최근접 계측점 수
@@ -979,20 +1413,23 @@ const SHEPARD_K = 4;    // 가중에 참여하는 최근접 계측점 수
 /**
  * Shepard 보간 — t(v) = Σ w·t_a / Σ w,  w = 1/(d+ε)², 최근접 K개만.
  *
+ * 좌우가 완전히 대칭으로 나오지는 않습니다. MediaPipe 테셀레이션이 좌우 완전대칭이
+ * 아니어서(정점 24개의 인접 관계가 다릅니다) 표면 거리에 최대 0.16mm 차이가 생기고,
+ * 최근접 K개를 자르는 방식이 그 차이를 증폭시킵니다. 컷오프에서 가중치가 0 으로
+ * 수렴하는 w=(1/d - 1/R)² 로 바꿔 봤지만 계측점이 모두 먼 볼 한가운데에서 분모가
+ * 0 에 수렴해 오히려 나빠졌습니다(3.5mm → 6.4mm). 실제 환자 얼굴은 애초에 좌우가
+ * 다르고 이 편차는 임상 허용 오차 1.5mm 안이므로 그대로 둡니다.
+ *
  * 계측점 자신의 정점에서는 d=0 이므로 입력값이 그대로 나옵니다. "하나씩 정확한
  * 값을 넣는다"가 의미를 가지려면 이 성질이 필수입니다.
  *
  * 이전의 라플라시안 스무딩은 제거했습니다. 보간 결과가 이미 매끄럽고, 스무딩을
  * 남기면 안와 연·비골 끝처럼 실제로 날카로워야 하는 경계를 다시 뭉갭니다.
  */
-function buildThickness() {
-  if (!anchorDist) buildAnchorDistances();
-  const vals = ANCHORS.map(a => anchorVal(a));
+function interpolateCol(key, out, fallback) {
+  const vals = ANCHORS.map(a => anchorVal(a, key));
 
-  if (!anchorDist) {                       // 인접 정보가 없으면 균일값 (안전판)
-    thickMm.fill(vals[0] ?? 8);
-    return;
-  }
+  if (!anchorDist) { out.fill(vals[0] ?? fallback); return; }      // 안전판
 
   const EPS = 1e-3;
   const cand = [];
@@ -1003,31 +1440,149 @@ function buildThickness() {
       if (d === Infinity) continue;
       cand.push([d, vals[a]]);
     }
-    if (!cand.length) { thickMm[i] = 8; continue; }
+    if (!cand.length) { out[i] = fallback; continue; }
     cand.sort((p, q) => p[0] - q[0]);
 
-    if (cand[0][0] < EPS) { thickMm[i] = cand[0][1]; continue; }   // 계측점 자신
+    if (cand[0][0] < EPS) { out[i] = cand[0][1]; continue; }       // 계측점 자신
     let num = 0, den = 0;
     for (let k = 0; k < Math.min(SHEPARD_K, cand.length); k++) {
       const wk = 1 / (cand[k][0] * cand[k][0]);
       num += wk * cand[k][1];
       den += wk;
     }
-    thickMm[i] = num / den;
+    out[i] = num / den;
   }
 }
 
-/* ── 뼈 세그먼트 / 공백 분류 ───────────────────────────────── */
+/**
+ * 계측점 값을 정점으로 보간합니다. 노화가 적용되기 전의 원본입니다.
+ *
+ * applyAging() 과 나눈 이유는 비용입니다. interpolateCol 은 정점마다 계측점 27개를
+ * 배열로 만들어 정렬하므로 호출당 수만 번의 할당이 일어납니다. 년수 슬라이더는
+ * 이 값을 바꾸지 않으므로, 사진 로드·계측점 편집·기본값 복원 때만 돌립니다.
+ */
+function buildThicknessBase() {
+  if (!anchorDist) buildAnchorDistances();
+
+  interpolateCol('t',  t0,  8);
+  interpolateCol('ep', ep0, 0.09);
+  interpolateCol('de', de0, 1.30);
+  interpolateCol('sf', sf0, 2.00);
+  interpolateCol('mu', mu0, 2.00);
+  interpolateCol('br', br0, 0.20);
+  interpolateCol('ds', ds0, 0.30);
+}
 
 /**
- * 정점을 뼈 세그먼트나 공백에 배정합니다.
- * 공백을 먼저 판정합니다 — 뼈가 없는 곳을 뼈로 분류하면 안 되기 때문입니다.
+ * 노화를 적용하고 층 하단 깊이를 layerDepth 에 채웁니다.
+ *
+ * 표피·진피·천층지방·근육은 문헌 절대값이고, 심부지방만 나머지입니다.
+ *
+ *   budget = t - PERI_MM            연조직에 쓸 수 있는 총 깊이
+ *   raw    = ep + de + sf + mu      절대값의 합
+ *   k      = raw > budget ? budget / raw : 1
+ *   df     = budget - k * raw       ≥ 0 보장
+ *
+ * k 가 필요한 이유: 절대값의 합이 예산을 넘으면 층 순서가 뒤집혀 메쉬가 서로
+ * 관통합니다. 눈꺼풀이 정확히 그 경우입니다 (t=2.0mm 인데 합이 약 2.9mm).
+ * k≈0.5 로 전부 압축되고 심부지방이 0 이 되는데, 눈꺼풀에 심부지방이 없다는
+ * 사실과 일치합니다 — 특수 케이스 없이 한 식으로 맞습니다.
+ *
+ * 압축된 부위는 두께 리드아웃에 비율을 표시합니다. 표시하지 않으면 "입력한
+ * 값과 화면이 왜 다른지" 를 추적할 방법이 없습니다.
+ *
+ * 노화 부분(years > 0):
+ *   심부지방 감소량은 df 를 알아야 하고 df 는 budget/raw/k 를 돌린 뒤에 나옵니다.
+ *   그래서 기준 df 를 먼저 구하고, 그 다음에 노화를 적용하는 2패스입니다.
  */
-function buildSegments() {
-  segOf.fill(-1);
-  voidOf.fill(-1);
+function applyAging() {
+  const A = state.years > 0 && !state.showBefore ? effDecades() : 0;
+  const fEp = Math.pow(1 + AGING_RATE.ep, A);
+  const fDe = Math.pow(1 + AGING_RATE.de, A);
+  const fSf = Math.pow(1 + AGING_RATE.sf, A);
+  const fMu = Math.pow(1 + AGING_RATE.mu, A);
+  const fDf = Math.pow(1 + AGING_RATE.df, A);
 
-  // 정규화 기준. 얼굴 크기가 달라도 같은 해부학적 위치에서 갈리도록.
+  for (let i = 0; i < NUM_LM; i++) {
+    const t = t0[i];
+    const b = i * NL;
+
+    if (A === 0 || !connected[i]) {
+      // 노화 없음 — 원본 그대로. years=0 이 정확히 이전 결과와 같아야 합니다.
+      epMm[i] = ep0[i]; deMm[i] = de0[i]; sfMm[i] = sf0[i]; muMm[i] = mu0[i];
+      thickMm[i] = t;
+      retractMm[i] = 0;
+      descentMm[i] = 0;
+      const budget = Math.max(0, t - PERI_MM);
+      const raw = ep0[i] + de0[i] + sf0[i] + mu0[i];
+      const k = raw > budget ? budget / raw : 1;
+      squeeze[i] = k;
+      let d = 0;
+      layerDepth[b + 0] = (d += ep0[i] * k);
+      layerDepth[b + 1] = (d += de0[i] * k);
+      layerDepth[b + 2] = (d += sf0[i] * k);
+      layerDepth[b + 3] = (d += mu0[i] * k);
+      layerDepth[b + 4] = budget;
+      layerDepth[b + 5] = t;
+      continue;
+    }
+
+    // 1패스 — 기준 심부지방
+    const budget0 = Math.max(0, t - PERI_MM);
+    const raw0 = ep0[i] + de0[i] + sf0[i] + mu0[i];
+    const k0 = raw0 > budget0 ? budget0 / raw0 : 1;
+    const df0 = budget0 - k0 * raw0;
+
+    // 2패스 — 노화 적용
+    const ep = ep0[i] * fEp, de = de0[i] * fDe, sf = sf0[i] * fSf, mu = mu0[i] * fMu;
+    const df = df0 * fDf;
+    let dSoft = (ep - ep0[i]) + (de - de0[i]) + (sf - sf0[i]) + (mu - mu0[i]) + (df - df0);
+
+    /*  가드 1 — 골막까지 먹어치우지 않습니다. 없으면 t=0.5mm 부위에 큰 sf/mu 를
+        넣고 30년을 돌렸을 때 t' 가 음수가 되어 뼈가 피부 바깥에 그려집니다. */
+    dSoft = Math.max(dSoft, -(t - PERI_MM));
+    dSoft = Math.min(0, dSoft);
+    const br = br0[i] * A;                         // 골흡수 (법선 안쪽)
+    const tAged = Math.max(T_MIN_MM, t + dSoft);   // 가드 2
+
+    /*  표면 후퇴 S = br - Δsoft.
+        뼈는 basePos 에서 S + tAged = t + br 깊이에 놓입니다 — 흡수량만큼만 안으로
+        들어갑니다. 이 식이 성립하려면 rebuild() 의 표면 루프와 레이어 루프 양쪽에
+        S 를 적용해야 합니다. */
+    retractMm[i] = br - dSoft;
+    descentMm[i] = ds0[i] * A;
+
+    epMm[i] = ep; deMm[i] = de; sfMm[i] = sf; muMm[i] = mu;
+    thickMm[i] = tAged;
+
+    const budget = Math.max(0, tAged - PERI_MM);
+    const raw = ep + de + sf + mu;
+    const k = raw > budget ? budget / raw : 1;
+    squeeze[i] = k;
+
+    let d = 0;
+    layerDepth[b + 0] = (d += ep * k);
+    layerDepth[b + 1] = (d += de * k);
+    layerDepth[b + 2] = (d += sf * k);
+    layerDepth[b + 3] = (d += mu * k);
+    layerDepth[b + 4] = budget;      // k=1 이면 df + Δdf 와 정확히 같습니다
+    layerDepth[b + 5] = tAged;
+  }
+}
+
+/** 보간 + 노화. 계측점 값이 바뀌었을 때 쓰는 묶음입니다. */
+function buildThickness() {
+  buildThicknessBase();
+  applyAging();
+}
+
+/* ── 구획 / 근육 / 뼈 세그먼트 분류 ────────────────────────── */
+
+/**
+ * 판정 컨텍스트. 지방 구획·근육·뼈가 전부 같은 기준으로 갈립니다.
+ * 정규화하는 이유: 얼굴 크기가 달라도 같은 해부학적 위치에서 갈려야 합니다.
+ */
+function pickContexts() {
   let minX = Infinity, maxX = -Infinity;
   for (let i = 0; i < NUM_LM; i++) {
     const x = basePos[i * 3];
@@ -1036,81 +1591,114 @@ function buildSegments() {
   }
   const mid = (minX + maxX) / 2;
   const halfW = Math.max(1e-6, (maxX - minX) / 2);
+  const yOf = lm => basePos[lm * 3 + 1];
 
-  const yOf  = lm => basePos[lm * 3 + 1];
-
-  // 명시 정점 목록으로 지정된 공백 (구강 등)
-  const explicitVoid = new Int16Array(NUM_LM).fill(-1);
-  VOID_DEFS.forEach((V, vi) => {
-    if (!V.verts) return;
-    for (const v of V.verts) if (v < NUM_LM) explicitVoid[v] = vi;
-  });
-
+  const out = new Array(NUM_LM);
   for (let i = 0; i < NUM_LM; i++) {
     const ri = regionOf[i];
-    const c = {
+    out[i] = {
       reg: ri >= 0 ? REGION_DEFS[ri].id : '',
       y: basePos[i * 3 + 1],
       ax: Math.abs(basePos[i * 3] - mid) / halfW,
       yOf,
     };
-
-    if (explicitVoid[i] >= 0) { voidOf[i] = explicitVoid[i]; continue; }
-    const vi = VOID_DEFS.findIndex(V => V.pick && V.pick(c));
-    if (vi >= 0) { voidOf[i] = vi; continue; }
-
-    const si = BONE_SEGMENTS.findIndex(S => S.pick(c));
-    if (si >= 0) segOf[i] = si;
   }
+  return out;
 }
 
 /**
- * 세그먼트별 삼각형 인덱스.
+ * 정점을 part 에 배정합니다. 먼저 맞는 것이 이깁니다(정의 순서 = 우선순위).
  *
- * 공백(안와·비강·구강·협부·측두와) 정점에 닿은 삼각형은 버립니다. 이 구멍이
- * 골격 형태를 만드는 핵심입니다.
+ * 연조직 층에는 voidDefs 를 주지 않습니다. 골격에서 공백이 따로 필요했던 건
+ * 마지막 세그먼트들이 넓은 부위를 포괄해서였습니다. 지방·근육에는 catch-all
+ * 규칙을 두지 않았으므로 미분류(-1)가 그대로 공백이 됩니다 — 구획 정의 자체가
+ * 형태입니다.
+ */
+function classifyParts(defs, out, ctx, voidDefs, voidArr) {
+  out.fill(-1);
+  if (voidArr) {
+    voidArr.fill(-1);
+    // 명시 정점 목록으로 지정된 공백 (구강 등)
+    const explicit = new Int16Array(NUM_LM).fill(-1);
+    voidDefs.forEach((V, vi) => {
+      if (!V.verts) return;
+      for (const v of V.verts) if (v < NUM_LM) explicit[v] = vi;
+    });
+    for (let i = 0; i < NUM_LM; i++) {
+      if (explicit[i] >= 0) { voidArr[i] = explicit[i]; continue; }
+      // 공백을 먼저 판정합니다 — 뼈가 없는 곳을 뼈로 분류하면 안 되기 때문입니다.
+      const vi = voidDefs.findIndex(V => V.pick && V.pick(ctx[i]));
+      if (vi >= 0) voidArr[i] = vi;
+    }
+  }
+  for (let i = 0; i < NUM_LM; i++) {
+    if (voidArr && voidArr[i] >= 0) continue;
+    const pi = defs.findIndex(P => P.pick(ctx[i]));
+    if (pi >= 0) out[i] = pi;
+  }
+}
+
+/** 모든 층의 정점 분류를 한 번에. */
+function buildSegments() {
+  const ctx = pickContexts();
+  LAYERS.forEach((L, li) => {
+    if (!L.parts) return;
+    classifyParts(L.parts, partOf[li], ctx, L.voids, L.voids ? voidOf : null);
+  });
+}
+
+/**
+ * part 별 삼각형 인덱스.
  *
- * 남은 삼각형은 정점 다수(2개 이상)가 속한 세그먼트에 줍니다. "세 정점이 모두
+ * 공백(골격의 안와·비강·구강·협부·측두와, 연조직의 미분류)에 닿은 삼각형은
+ * 버립니다. 이 구멍이 형태를 만드는 핵심입니다.
+ *
+ * 남은 삼각형은 정점 다수(2개 이상)가 속한 part 에 줍니다. "세 정점이 모두
  * 같아야 한다"로 하면 턱선처럼 폭이 랜드마크 1개뿐인 띠는 삼각형이 하나도 안
- * 남아 뼈가 통째로 사라집니다(하악각·하악체·치조골이 실제로 0개였음). 또 실제
+ * 남아 구조가 통째로 사라집니다(하악각·하악체·치조골이 실제로 0개였음). 또 실제
  * 두개골의 뼈들은 봉합으로 맞닿아 있지 벌어져 있지 않으므로, 경계를 버려
  * 틈을 만드는 것보다 다수결로 한쪽에 붙이는 쪽이 해부학적으로도 맞습니다.
- * 세 정점이 서로 다른 세그먼트면 어디에 줄지 정할 수 없으므로 버립니다.
+ * 세 정점이 서로 다른 part 면 어디에 줄지 정할 수 없으므로 버립니다.
  *
- * 반드시 orientIndex() 뒤에 호출해야 합니다. 앞에 두면 골격만 음영이 얼룩지고
+ * 반드시 orientIndex() 뒤에 호출해야 합니다. 앞에 두면 음영만 얼룩지고
  * 증상이 조명 버그처럼 보여 원인을 찾기 어렵습니다.
  */
-function buildSegmentIndex() {
+function buildPartIndex(defs, ownerOf, meshes, voidArr) {
   const tri = faceGeo.getIndex();
   if (!tri) return;
   const t = tri.array;
-  const buckets = BONE_SEGMENTS.map(() => []);
+  const buckets = defs.map(() => []);
 
   for (let i = 0; i + 2 < t.length; i += 3) {
     const a = t[i], b = t[i + 1], c = t[i + 2];
-    // 공백에 닿으면 구멍 — 뼈를 그리지 않습니다
-    if (voidOf[a] >= 0 || voidOf[b] >= 0 || voidOf[c] >= 0) continue;
+    if (voidArr && (voidArr[a] >= 0 || voidArr[b] >= 0 || voidArr[c] >= 0)) continue;
 
-    const sa = segOf[a], sb = segOf[b], sc = segOf[c];
+    const sa = ownerOf[a], sb = ownerOf[b], sc = ownerOf[c];
     const s = sa === sb || sa === sc ? sa
             : sb === sc              ? sb
             : -1;                            // 셋 다 다름 → 귀속 불명
-    if (s < 0) continue;
+    if (s < 0) continue;                     // -1 끼리 일치한 경우도 여기서 걸립니다
     buckets[s].push(a, b, c);
   }
 
   buckets.forEach((list, si) => {
-    const geo = segMeshes[si].geometry;
+    const geo = meshes[si].geometry;
     geo.setIndex(list);
     // 인덱스가 비면 three.js 가 경고 없이 아무것도 그리지 않으므로 개수를 남깁니다.
-    BONE_SEGMENTS[si].triCount = list.length / 3;
+    defs[si].triCount = list.length / 3;
     geo.computeBoundingSphere();
   });
+}
 
-  // 세그먼트가 비어 있으면 화면에는 "뼈가 없다" 로만 보여 원인을 알 수 없습니다.
-  // 분류 조건을 손볼 때 필요한 유일한 단서이므로 삼각형 수를 남깁니다.
-  console.log('뼈 세그먼트 삼각형 수',
-    Object.fromEntries(BONE_SEGMENTS.map(S => [S.ko, S.triCount])));
+function buildSegmentIndex() {
+  LAYERS.forEach((L, li) => {
+    if (!L.parts) return;
+    buildPartIndex(L.parts, partOf[li], partMeshes[li], L.voids ? voidOf : null);
+    // 비어 있으면 화면에는 "구조가 없다" 로만 보여 원인을 알 수 없습니다.
+    // 분류 조건을 손볼 때 필요한 유일한 단서이므로 삼각형 수를 남깁니다.
+    console.log(`${L.label} 삼각형 수`,
+      Object.fromEntries(L.parts.map(P => [P.ko, P.triCount])));
+  });
 }
 
 /**
@@ -1557,15 +2145,25 @@ function rebuild() {
 
   const midX = (basePos[LM_FACE_L * 3] + basePos[LM_FACE_R * 3]) / 2;
   const flatFace = state.view === 'photo';   // 사진 모드에서는 배경과 완전 정합되도록 평면화
+  const unitPerMm = 1 / state.mmPerUnit;
+
+  /*  노화는 3D 모델 전용입니다. 배경 사진 격자에는 랜드마크도 법선도 두께도 없어서
+      얼굴만 늙히면 경계에 이음선이 생깁니다. 사진 모드에서 슬라이더를 만지면
+      3D 모델로 전환되므로 조용히 무반응인 상태는 생기지 않습니다.
+      showBefore(원본 보기) 는 applyAging() 에서 이미 0 으로 처리됩니다. */
+  const aged = !flatFace && state.years > 0 && !state.showBefore;
 
   // ── 얼굴 메쉬 ──
   for (let i = 0; i < NUM_LM; i++) {
     const px = basePos[i * 3], py = basePos[i * 3 + 1], pz = basePos[i * 3 + 2];
     // 사진 모드에서는 배경 격자와 완전히 같은 변형장을 써야 이음선이 생기지 않음
     accumulateDisplacement(px, py, pz, midX, _disp, flatFace);
-    workPos[i * 3]     = px + _disp[0];
-    workPos[i * 3 + 1] = py + _disp[1];
-    workPos[i * 3 + 2] = flatFace ? 0 : pz + _disp[2];
+    // 표면 후퇴 S — 층이 줄고 골흡수가 일어난 만큼 법선 안쪽으로 들어옵니다
+    const s = aged ? retractMm[i] * unitPerMm : 0;
+    workPos[i * 3]     = px + _disp[0] - baseNormal[i * 3]     * s;
+    workPos[i * 3 + 1] = py + _disp[1] - baseNormal[i * 3 + 1] * s
+                         - (aged ? descentMm[i] * unitPerMm : 0);
+    workPos[i * 3 + 2] = flatFace ? 0 : pz + _disp[2] - baseNormal[i * 3 + 2] * s;
   }
   faceGeo.attributes.position.array.set(workPos);
   faceGeo.attributes.position.needsUpdate = true;
@@ -1595,13 +2193,12 @@ function rebuild() {
   // 각 층은 변형된 표면에서 그 부위의 층 깊이만큼 법선 반대로 들어간 면입니다.
   // 층이 깊을수록 연조직 감쇠를 덜 받으므로(depthT) 안쪽이 더 많이 움직입니다.
   if (layerGroup.visible) {
-    const unitPerMm = 1 / state.mmPerUnit;
     LAYERS.forEach((L, li) => {
       const mesh = layerMeshes[li];
-      // 골격 층은 세그먼트 메쉬가 위치 버퍼를 공유하므로, 통짜 메쉬가 숨겨져
-      // 있어도 세그먼트가 하나라도 보이면 좌표를 갱신해야 합니다.
-      const needed = mesh.visible
-        || (L.segmented && segMeshes.some(m => m.visible));
+      const parts = partMeshes[li];
+      // 구획 메쉬가 위치 버퍼를 공유하므로, 통짜 메쉬가 숨겨져 있어도
+      // 구획이 하나라도 보이면 좌표를 갱신해야 합니다.
+      const needed = mesh.visible || (parts && parts.some(m => m.visible));
       if (!needed) return;
 
       const geo = mesh.geometry;
@@ -1609,31 +2206,46 @@ function rebuild() {
 
       for (let i = 0; i < NUM_LM; i++) {
         const th = thickMm[i];
-        const depth = L.depth(th);
+        const depth = layerDepth[i * NL + li];
         // 층이 깊을수록 연조직 감쇠를 덜 받습니다 (표면=0, 뼈=1)
         const dt = th > 0 ? Math.min(1, depth / th) : 0;
 
         const px = basePos[i * 3], py = basePos[i * 3 + 1], pz = basePos[i * 3 + 2];
         accumulateDisplacement(px, py, pz, midX, _disp, false, dt);
 
+        /*  표면과 똑같은 S 를 더합니다. 이 루프는 변형된 표면이 아니라 basePos 에서
+            층을 놓으므로, 여기에 S 가 없으면 뼈가 t' = t + Δsoft 깊이에 그려져
+            나이를 먹을수록 두개골이 커집니다. S 를 넣으면 뼈는 S + t' = t + br,
+            즉 흡수량만큼만 안으로 들어갑니다.
+
+            하강은 연조직 예산 기준으로 감쇠시킵니다. 심부지방 하단과 뼈에서 정확히
+            0 이므로 골막 틈을 넘는 관통이 구조적으로 불가능하고, 지지인대가 골막에
+            붙어 있어 심부는 처지지 않는다는 해부학과도 일치합니다.
+            수술 감쇠 좌표 dt 를 쓰면 안 됩니다 — li=4 에서 1-dt = PERI_MM/t 이라
+            얇은 부위에 하강이 남아 턱선에 관통 띠가 생깁니다. */
         const off = depth * unitPerMm;
-        pos[i * 3]     = px + _disp[0] - baseNormal[i * 3]     * off;
-        pos[i * 3 + 1] = py + _disp[1] - baseNormal[i * 3 + 1] * off;
-        pos[i * 3 + 2] = pz + _disp[2] - baseNormal[i * 3 + 2] * off;
+        const s = aged ? retractMm[i] * unitPerMm : 0;
+        let dy = 0;
+        if (aged) {
+          const budget = layerDepth[i * NL + 4];
+          const dsT = budget > 0 ? Math.max(0, 1 - depth / budget) : 0;
+          dy = descentMm[i] * dsT * unitPerMm;
+        }
+        pos[i * 3]     = px + _disp[0] - baseNormal[i * 3]     * (off + s);
+        pos[i * 3 + 1] = py + _disp[1] - baseNormal[i * 3 + 1] * (off + s) - dy;
+        pos[i * 3 + 2] = pz + _disp[2] - baseNormal[i * 3 + 2] * (off + s);
       }
       geo.attributes.position.needsUpdate = true;
       geo.computeVertexNormals();
       geo.computeBoundingSphere();
 
-      // 세그먼트는 위치 속성을 공유하므로 needsUpdate 가 이미 반영됩니다.
+      // 구획은 위치 속성을 공유하므로 needsUpdate 가 이미 반영됩니다.
       // 법선은 인덱스가 달라 각자 계산해야 하고, 바운딩 구도 각자 필요합니다.
-      if (L.segmented) {
-        segMeshes.forEach(m => {
-          if (!m.visible) return;
-          m.geometry.computeVertexNormals();
-          m.geometry.computeBoundingSphere();
-        });
-      }
+      if (parts) parts.forEach(m => {
+        if (!m.visible) return;
+        m.geometry.computeVertexNormals();
+        m.geometry.computeBoundingSphere();
+      });
     });
   }
 
@@ -1708,8 +2320,8 @@ function applyPeel() {
 
   layerGroup.visible = on;
   layerMeshes.forEach((mesh, i) => {
-    // 골격 층은 세그먼트 메쉬가 대신 그립니다 (통짜 메쉬는 항상 숨김)
-    mesh.visible = on && i <= pi && !LAYERS[i].segmented;
+    // parts 가 있는 층은 구획 메쉬가 대신 그립니다 (통짜 메쉬는 항상 숨김)
+    mesh.visible = on && i <= pi && !LAYERS[i].parts;
     const isTarget = i === pi;
     mesh.material.opacity     = isTarget ? 1 : 0.18;
     mesh.material.transparent = !isTarget;
@@ -1717,16 +2329,19 @@ function applyPeel() {
     mesh.renderOrder          = isTarget ? 0 : 6;
   });
 
-  // 뼈 세그먼트 — 골격 층을 볼 때만. 조작 중인 시술의 대상 뼈는 강조합니다.
-  const boneOn = on && pi === BONE_LI;
-  segMeshes.forEach((m, si) => {
-    const S = BONE_SEGMENTS[si];
-    // 인덱스가 빈 세그먼트는 three.js 가 경고 없이 아무것도 그리지 않으므로
-    // 애초에 보이지 않게 둡니다 (분류가 어긋났을 때 원인 추적이 쉬워집니다).
-    m.visible = boneOn && (S.triCount ?? 0) > 0;
-    const hot = !!state.hotSeg?.includes(S.id);
-    m.material.color.setHex(hot ? BONE_ACCENT : S.color);
-    m.material.emissive.setHex(hot ? BONE_ACCENT_EM : 0x000000);
+  // 구획·근육·뼈 — 자기 층이 선택됐을 때만. 조작 중인 시술의 대상 구조는 강조합니다.
+  partMeshes.forEach((meshes, li) => {
+    if (!meshes) return;
+    const layerOn = on && li === pi;
+    meshes.forEach((m, si) => {
+      const P = LAYERS[li].parts[si];
+      // 인덱스가 빈 구획은 three.js 가 경고 없이 아무것도 그리지 않으므로
+      // 애초에 보이지 않게 둡니다 (분류가 어긋났을 때 원인 추적이 쉬워집니다).
+      m.visible = layerOn && (P.triCount ?? 0) > 0;
+      const hot = !!state.hotSeg?.includes(P.id);
+      m.material.color.setHex(hot ? BONE_ACCENT : P.color);
+      m.material.emissive.setHex(hot ? BONE_ACCENT_EM : 0x000000);
+    });
   });
 
   // 레이어를 보는 동안 표면 메쉬(사진 텍스처)는 시야를 가리므로 숨깁니다.
@@ -1734,7 +2349,10 @@ function applyPeel() {
   matGroup.style.display = (state.view === 'photo' || on) ? 'none' : '';
 
   [...segPeel.children].forEach(b => b.classList.toggle('on', b.dataset.peel === state.peel));
-  if (boneOn) {
+  if (!on) {
+    peelHintEl.innerHTML =
+      '계측점 두께만큼 표면을 안쪽으로 밀어 만든 <b>추정 레이어</b>입니다. 3D 모델 뷰에서만 보입니다.';
+  } else if (pi === BONE_LI) {
     const shown = BONE_SEGMENTS.filter(S => (S.triCount ?? 0) > 0).length;
     peelHintEl.innerHTML =
       `<b>골격</b> — 성형으로 접근하는 뼈 ${shown}개 세그먼트. `
@@ -1742,10 +2360,11 @@ function applyPeel() {
       + '세그먼트 경계의 자유 엣지가 뼈 능선입니다. '
       + '두개골 전체 모델이 아니며, 표면에서 추정한 위치입니다 (문헌 최고 정확도 2.46mm).';
   } else {
-    peelHintEl.innerHTML = on
-      ? `<b>${LAYERS[pi].label}</b> 층. 위 층은 반투명 껍질로 남겨 두었습니다. `
-        + '시술을 조작하면 안쪽 층이 표면보다 더 많이 움직입니다 (연조직 반영률).'
-      : '계측점 두께만큼 표면을 안쪽으로 밀어 만든 <b>추정 레이어</b>입니다. 3D 모델 뷰에서만 보입니다.';
+    const L = LAYERS[pi];
+    const n = L.parts ? L.parts.filter(P => (P.triCount ?? 0) > 0).length : 0;
+    peelHintEl.innerHTML =
+      `<b>${L.label}</b>${n ? ` — 구획 ${n}개` : ''}. ${L.hint || ''} `
+      + '위 층은 반투명 껍질로 남겨 두었습니다.';
   }
 
   applyOverlay();
@@ -1824,44 +2443,85 @@ function updateThickness() {
   if (!def || !state.loaded) { thickEl.classList.add('hidden'); return; }
   const ri = REGION_DEFS.indexOf(def);
 
-  let sum = 0, n = 0, lo = Infinity, hi = -Infinity, boned = 0;
+  // 층 두께는 정점별로 먼저 구해서 평균합니다. 평균 두께에서 층을 계산하면
+  // k 압축이 평균 뒤로 밀려 눈꺼풀 같은 부위에서 값이 어긋납니다.
+  const own = new Float64Array(NL);
+  let sum = 0, n = 0, lo = Infinity, hi = -Infinity, boned = 0, kSum = 0;
+  let t0Sum = 0, rSum = 0, dSum = 0;
   for (let i = 0; i < NUM_LM; i++) {
     if (regionOf[i] !== ri) continue;
     const t = thickMm[i];
     sum += t; n++;
+    kSum += squeeze[i];
+    t0Sum += t0[i]; rSum += retractMm[i]; dSum += descentMm[i];
     if (t < lo) lo = t;
     if (t > hi) hi = t;
     if (segOf[i] >= 0) boned++;
+    const b = i * NL;
+    let prev = 0;
+    for (let li = 0; li < NL; li++) {
+      own[li] += Math.max(0, layerDepth[b + li] - prev);
+      prev = layerDepth[b + li];
+    }
   }
   if (!n) { thickEl.classList.add('hidden'); return; }
   const avg = sum / n;
+  const kAvg = kSum / n;
+  const aging = state.years > 0 && !state.showBefore;
+  const t0Avg = t0Sum / n, rAvg = rSum / n, dAvg = dSum / n;
 
-  // 각 층의 자체 두께 = 하단 깊이 - 그 위 층의 하단 깊이
-  let prev = 0;
   const rows = [], bars = [];
-  for (const L of LAYERS) {
-    const own = Math.max(0, L.depth(avg) - prev);
-    prev = L.depth(avg);
-    rows.push(`${L.label} <span class="tn">${own.toFixed(1)}</span>`);
-    bars.push(`<div style="flex:${own.toFixed(2)};background:#${L.color.toString(16).padStart(6, '0')}"></div>`);
-  }
+  LAYERS.forEach((L, li) => {
+    const mm = own[li] / n;
+    // 골격은 두께가 아니라 바닥입니다. 그 층의 own 값(심부지방 하단~뼈)이 곧 골막이므로
+    // 골막으로 적습니다. 여기에 '골격 0.5mm' 라고 쓰면 뼈가 0.5mm 인 것처럼 읽힙니다.
+    const bone = li === BONE_LI;
+    const label = bone ? '골막' : L.label;
+    const color = bone ? 0xD8D2C4 : L.color;
+    // 표피는 0.1mm 라 막대에서 안 보입니다. 소수점 2자리까지 적어 숫자로 읽히게 합니다.
+    rows.push(`${label} <span class="tn">${mm < 1 ? mm.toFixed(2) : mm.toFixed(1)}</span>`);
+    bars.push(`<div style="flex:${mm.toFixed(2)};min-width:2px;background:#${color.toString(16).padStart(6, '0')}"></div>`);
+  });
 
-  // 이 부위에 걸린 뼈 세그먼트 이름 (없으면 골격 성형 대상이 아님)
-  const segNames = [...new Set(
-    [...Array(NUM_LM).keys()]
-      .filter(i => regionOf[i] === ri && segOf[i] >= 0)
-      .map(i => BONE_SEGMENTS[segOf[i]].ko))];
+  // 이 부위에 걸린 구조 이름. 층별로 모읍니다.
+  const idx = [...Array(NUM_LM).keys()].filter(i => regionOf[i] === ri);
+  const namesOf = li => [...new Set(
+    idx.filter(i => partOf[li][i] >= 0).map(i => LAYERS[li].parts[partOf[li][i]].ko))];
+
+  const structLines = LAYERS
+    .map((L, li) => [L, li])
+    .filter(([L]) => L.parts)
+    .map(([L, li]) => {
+      const names = namesOf(li);
+      return names.length
+        ? `<div>${L.label}: <span class="tn">${names.join(' · ')}</span></div>`
+        : `<div style="opacity:.7">${L.label}: 이 부위에는 표시하지 않습니다</div>`;
+    });
 
   thickEl.innerHTML = `
-    <div><span class="tn">${def.label}</span> — 층 두께 (mm · 부위 평균)</div>
+    <div><span class="tn">${def.label}</span> — 층 두께 (mm · 부위 평균)${
+      aging ? ` <span class="tn">${state.years}년 후</span>` : ''}</div>
     <div id="thickBar">${bars.join('')}</div>
     <div>${rows.join(' · ')}</div>
-    <div>표면→아래 구조 <span class="tn">${avg.toFixed(1)}mm</span>
+    <div>표면→뼈 <span class="tn">${avg.toFixed(1)}mm</span>
          <span style="opacity:.7">(${lo.toFixed(1)}~${hi.toFixed(1)})</span></div>
-    ${boned
-      ? `<div>골격 세그먼트: <span class="tn">${segNames.join(' · ')}</span>
-             (정점 ${boned}/${n})</div>`
-      : '<div>이 부위는 골격 성형 대상이 아니며 뼈를 표시하지 않습니다.</div>'}
+    ${aging
+      ? `<div style="opacity:.85">노화 ${state.years}년
+             (${state.age}→${state.age + state.years}세):
+             연조직 <span class="tn">${t0Avg.toFixed(1)}→${avg.toFixed(1)}mm</span> ·
+             표면 후퇴 <span class="tn">${rAvg.toFixed(1)}mm</span> ·
+             하강 <span class="tn">${dAvg.toFixed(1)}mm</span></div>`
+      : ''}
+    ${/* 0.95 미만에서만 알립니다. 부위 경계의 얇은 정점 몇 개 때문에 99% 가 뜨면
+          '압축했다' 는 경고가 오히려 거짓말이 됩니다. */ ''}
+    ${kAvg < 0.95
+      ? `<div style="opacity:.85">전체 두께가 문헌값의 합보다 얇아 연조직을
+             <span class="tn">${Math.round(kAvg * 100)}%</span>로 압축했습니다 —
+             층 순서가 뒤집히지 않게 합니다. 가장 얇은 곳에서 심부지방이 0 이 되는 것이 정상입니다.${
+               aging ? ' 노화로 전체 두께가 줄면 이 압축률도 함께 변합니다 — 그만큼 층별 숫자에 노화가 덜 나타납니다.' : ''}</div>`
+      : ''}
+    ${structLines.join('')}
+    ${boned ? `<div style="opacity:.7">골격 정점 ${boned}/${n}</div>` : ''}
     <div>계측점 보간 추정치 — 개인 CT 계측값이 아닙니다.</div>
   `;
   thickEl.classList.remove('hidden');
@@ -1879,9 +2539,31 @@ const anchorInputs  = {};    // 계측점 id -> <input>
  * 계측점 행(정중선 13 + 좌우 14)을 만듭니다. 행을 누르면 마커가 그 랜드마크로 이동하고, 숫자를 고치면
  * 즉시 반영됩니다 — 거리표(anchorDist)는 위치에만 의존하므로 재계산하지 않고
  * 두께 보간만 다시 돌립니다.
+ *
+ * 열이 7개(표피·진피·천층지방·근육·전체·골흡수·하강)지만 행마다 입력을 7개 두면
+ * 189개가 되어 사이드바에 들어가지 않습니다. 위의 열 선택 버튼으로 한 열만 편집하므로
+ * 화면은 계속 27행 × 입력 1개입니다.
  */
 function buildAnchorPanel() {
   anchorsEl.innerHTML = '';
+
+  // ── 열 선택 ──
+  const seg = document.createElement('div');
+  seg.className = 'seg wrap';
+  seg.style.marginBottom = '8px';
+  for (const c of T_COLS) {
+    const b = document.createElement('button');
+    b.textContent = c.label;
+    b.dataset.col = c.key;
+    b.addEventListener('click', () => {
+      state.anchorCol = c.key;
+      buildAnchorPanel();
+    });
+    seg.appendChild(b);
+  }
+  anchorsEl.appendChild(seg);
+
+  const col = colOf(state.anchorCol);
   let midDone = false, latDone = false;
 
   for (const a of ANCHORS) {
@@ -1903,10 +2585,11 @@ function buildAnchorPanel() {
 
     const inp = document.createElement('input');
     inp.type = 'number';
-    inp.step = '0.5';
-    inp.min = String(T_MIN_MM);
-    inp.max = String(T_MAX_MM);
-    inp.value = anchorVal(a).toFixed(1);
+    // 표피는 0.1mm 단위라 step 0.5 로는 편집이 불가능합니다.
+    inp.step = col.max <= 1 ? '0.01' : col.max <= 5 ? '0.05' : '0.5';
+    inp.min = String(col.min);
+    inp.max = String(col.max);
+    inp.value = fmtCol(anchorVal(a, col.key));
     inp.addEventListener('click', e => e.stopPropagation());
     inp.addEventListener('input', () => onAnchorInput(a, inp));
 
@@ -1939,6 +2622,8 @@ function buildAnchorPanel() {
   }
 }
 
+const fmtCol = v => v < 1 ? v.toFixed(2) : v.toFixed(1);
+
 /**
  * 입력 처리. 빈 값·문자는 무시하고 이전 값을 유지합니다.
  * 여기서 막지 않으면 NaN 이 정점 좌표까지 전파되어 메쉬가 통째로 사라지고,
@@ -1947,7 +2632,7 @@ function buildAnchorPanel() {
 function onAnchorInput(a, inp) {
   const v = parseFloat(inp.value);
   if (!Number.isFinite(v)) { inp.classList.add('edited'); return; }   // 타이핑 중 — 아직 반영 안 함
-  anchorOverride[a.id] = clampT(v);
+  anchorOverride[`${a.id}:${state.anchorCol}`] = clampCol(state.anchorCol, v);
   saveOverrides();
   refreshAnchorRows();
   updateAnchorHint();
@@ -1962,20 +2647,24 @@ function refreshAnchorRows() {
   for (const a of ANCHORS) {
     const inp = anchorInputs[a.id];
     if (!inp) continue;
-    inp.classList.toggle('edited', Number.isFinite(anchorOverride[a.id]));
+    inp.classList.toggle('edited', Number.isFinite(anchorOverride[`${a.id}:${state.anchorCol}`]));
     inp.parentElement.classList.toggle('on', state.markerAnchor === a.id);
   }
+  [...anchorsEl.querySelectorAll('[data-col]')]
+    .forEach(b => b.classList.toggle('on', b.dataset.col === state.anchorCol));
 }
 
+/** 사용자가 덮어쓴 값의 개수. 열 전체를 셉니다. */
 function editedCount() {
-  return ANCHORS.filter(a => Number.isFinite(anchorOverride[a.id])).length;
+  return Object.keys(anchorOverride).filter(k => Number.isFinite(anchorOverride[k])).length;
 }
 
 function updateAnchorHint() {
   const n = editedCount();
   anchorHintEl.innerHTML = n
-    ? `<b>${n}개</b> 값을 사용자 입력으로 덮어썼습니다. 브라우저에 저장됩니다.`
-    : '전부 문헌 기본값입니다 (Stephan &amp; Simpson 메타분석 등 성인 평균 근사).';
+    ? `<b>${n}개</b> 값을 사용자 입력으로 덮어썼습니다 (모든 열 합계). 브라우저에 저장됩니다.`
+    : '전부 문헌 기본값입니다. 전체 두께는 Stephan &amp; Simpson 메타분석(FSTT) 성인 평균 근사, '
+      + '표피·진피·지방·근육은 고주파 초음파 계측 문헌값입니다.';
 }
 
 /**
@@ -1984,9 +2673,17 @@ function updateAnchorHint() {
  */
 function updateDisclaimer() {
   const n = editedCount();
-  document.getElementById('dcSource').innerHTML = n
-    ? `레이어 두께는 문헌 계측점(FSTT) 평균 + <b>사용자 입력 계측값 ${n}개</b>입니다.`
-    : '레이어 두께는 문헌 계측점(FSTT) 평균이며 개인 CT 계측이 아닙니다.';
+  const base = n
+    ? `레이어 두께는 문헌 계측점 평균 + <b>사용자 입력 계측값 ${n}개</b>입니다.`
+    : '레이어 두께는 문헌 계측점 평균이며 개인 계측값이 아닙니다.';
+  /*  년수 외삽은 계측점을 고치는 것보다 훨씬 큰 이탈입니다. 진피 감소율만 계측치이고
+      지방 위축·하강은 정성 소견을 정량화한 추정치이므로 반드시 함께 적습니다. */
+  const aged = state.years > 0
+    ? ` <b>${state.years}년 후 노화를 외삽한 화면</b>입니다 — 진피 감소율과 두개골 계측값은
+        문헌 측정치이지만 지방 위축·하강량은 임상 서술을 정량화한 <b>추정치</b>이고,
+        년수가 길수록 오차가 커집니다.`
+    : '';
+  document.getElementById('dcSource').innerHTML = base + aged;
 }
 
 /**
@@ -2013,9 +2710,7 @@ function updateMarkers() {
 document.getElementById('btnAnchorReset').addEventListener('click', () => {
   anchorOverride = {};
   saveOverrides();
-  for (const a of ANCHORS) anchorInputs[a.id].value = a.t.toFixed(1);
-  refreshAnchorRows();
-  updateAnchorHint();
+  buildAnchorPanel();   // 모든 열이 문헌값으로 돌아가므로 행을 다시 만듭니다
   updateDisclaimer();
   if (!state.loaded) return;
   buildThickness();
@@ -2024,12 +2719,15 @@ document.getElementById('btnAnchorReset').addEventListener('click', () => {
 });
 
 document.getElementById('btnAnchorCopy').addEventListener('click', async () => {
+  // 열 5개를 전부 내보냅니다 — 한 열만 주면 초음파 계측 결과를 옮겨 적을 때 쓸 수 없습니다.
   const obj = {};
-  for (const a of ANCHORS) obj[a.id] = anchorVal(a);
+  for (const a of ANCHORS) {
+    obj[a.id] = Object.fromEntries(T_COLS.map(c => [c.key, anchorVal(a, c.key)]));
+  }
   const text = JSON.stringify(obj, null, 2);
   try {
     await navigator.clipboard.writeText(text);
-    anchorHintEl.textContent = `계측값 ${ANCHORS.length}개를 클립보드에 복사했습니다.`;
+    anchorHintEl.textContent = `계측값 ${ANCHORS.length}개 × ${T_COLS.length}열을 클립보드에 복사했습니다.`;
   } catch {
     // 클립보드 권한이 없는 환경 — 콘솔로 대체 (조용히 실패하면 사용자가 원인을 모름)
     console.log(text);
@@ -2101,12 +2799,13 @@ for (const op of OPS) {
     rebuild();
   });
 
-  // 조작 중인 시술의 대상 뼈를 골격 층에서 강조합니다 — 어떤 뼈를 건드리는
-  // 시술인지가 상담에서 가장 먼저 나오는 질문입니다.
+  // 조작 중인 시술의 대상 구조를 그 층에서 강조합니다 — 어떤 뼈·근육·지방을
+  // 건드리는 시술인지가 상담에서 가장 먼저 나오는 질문입니다.
   const hot = on => {
     if (!op.seg) return;
     state.hotSeg = on ? op.seg : null;
-    if (state.peel === 'bone') applyPeel();
+    // 대상 구조가 여러 층에 걸쳐 있으므로 지금 보고 있는 층이 그중 하나면 다시 그립니다.
+    if (op.seg.some(id => PART_LAYER.get(id) === LAYERS.findIndex(L => L.id === state.peel))) applyPeel();
   };
   slider.addEventListener('pointerdown', () => hot(true));
   slider.addEventListener('pointerup',   () => hot(false));
@@ -2116,6 +2815,47 @@ for (const op of OPS) {
   opsEl.appendChild(row);
   opRows[op.id] = { row, slider, val, der };
 }
+
+// ── 시간축 (노화) ───────────────────────────────────────────
+const inAge = document.getElementById('inAge');
+const inYears = document.getElementById('inYears');
+const ageValEl = document.getElementById('ageVal');
+const yearsValEl = document.getElementById('yearsVal');
+
+function updateAgeLabels() {
+  ageValEl.textContent = `${state.age} 세`;
+  yearsValEl.textContent = state.years === 0
+    ? '지금'
+    : `${state.years}년 후 (${state.age + state.years}세)`;
+  yearsValEl.classList.toggle('zero', state.years === 0);
+}
+updateAgeLabels();
+
+function onAgingInput() {
+  /*  사진이 없으면 basePos 가 전부 0 입니다. 이 상태로 buildThickness 경로에
+      들어가면 buildAnchorDistances() 가 쓰레기 거리표를 캐시해 버립니다. */
+  if (!state.loaded) return;
+  state.age = +inAge.value;
+  state.years = +inYears.value;
+  updateAgeLabels();
+
+  // 노화는 3D 모델 전용 — 조용히 아무 일도 안 하는 것처럼 보이면 안 됩니다.
+  const needView = state.years > 0 && state.view !== 'model';
+  if (needView) {
+    state.view = 'model';
+    [...document.getElementById('segView').children]
+      .forEach(b => b.classList.toggle('on', b.dataset.view === 'model'));
+  }
+
+  applyAging();          // 보간은 다시 하지 않습니다 (년수는 계측점 값을 바꾸지 않음)
+  updateThickness();
+  updateReadout();
+  updateDisclaimer();
+  if (needView) applyView();   // 내부에서 rebuild()
+  else rebuild();
+}
+inAge.addEventListener('input', onAgingInput);
+inYears.addEventListener('input', onAgingInput);
 
 function updateOpLabel(op, valEl, derEl) {
   const slider = opSliderMm(op);
@@ -2144,6 +2884,50 @@ const NOTICE = `
     수치는 문헌 평균 연조직 반영률에 기반한 추정치입니다.
   </div>`;
 
+/**
+ * 예후 예측 블록.
+ *
+ * 주름·피부결·색소는 그리지 않습니다. 정점 478개로 비구순주름의 골을 만들면 그것은
+ * 거짓입니다. 대신 어느 층이 얼마나 줄었는지를 글로 보고합니다 — 그게 이 도구가
+ * 표면 조각 도구와 다른 유일한 이유이기도 합니다.
+ */
+function agingBlock() {
+  if (state.years <= 0) return '';
+
+  // 부위 평균. 심부지방은 배열이 아니라 층 하단 차이(예산 - 근육 하단)입니다.
+  const avgOf = (rid, valOf) => {
+    const ri = REGION_DEFS.findIndex(d => d.id === rid);
+    let s = 0, n = 0;
+    for (let i = 0; i < NUM_LM; i++) if (regionOf[i] === ri) { s += valOf(i); n++; }
+    return n ? s / n : 0;
+  };
+  const dfOf = i => Math.max(0, layerDepth[i * NL + 4] - layerDepth[i * NL + 3]);
+
+  const rows = [
+    ['볼 (중안면)', 'cheek'],
+    ['턱선',        'jaw'],
+    ['광대',        'cheekbone'],
+    ['이마',        'forehead'],
+  ].map(([label, rid]) => `
+    <div>${label}: 하강 <span class="pm">${avgOf(rid, i => descentMm[i]).toFixed(1)}mm</span>
+         · 표면 후퇴 <span class="pm">${avgOf(rid, i => retractMm[i]).toFixed(1)}mm</span>
+         <span class="pd">(심부지방 ${avgOf(rid, dfOf).toFixed(1)}mm)</span></div>`);
+
+  return `
+    <div class="plan">
+      <div class="ph"><b>${state.years}년 후 예후 (${state.age}→${state.age + state.years}세)</b>
+        <span class="pl">시간축</span></div>
+      <div class="pd">노화를 표면 워프가 아니라 층 두께 변화로 계산했습니다.
+        유효 10년 수 ${effDecades().toFixed(2)} (40대부터 가속).</div>
+      ${rows.join('')}
+      <div class="pd">비구순지방이 하강한 만큼 <b>비구순주름 심화</b>가 예상됩니다.
+        주름·피부결·색소는 정점 478개로 표현할 수 없어 그리지 않고 글로만 적습니다.</div>
+      <div class="pd">한계: 시술 후 노화와 늙은 얼굴에 시술한 결과가 <b>구별되지 않습니다</b>
+        (둘 다 같은 벡터 오프셋이라 순서를 바꿔도 같은 결과가 나옵니다).
+        연조직 반영률은 0년 기준으로 고정되어 있고, 표면→시술량 역산도 0년 기준입니다.</div>
+    </div>`;
+}
+
 function updateReadout() {
   if (!state.loaded) { readoutEl.innerHTML = '사진을 먼저 올려주세요.'; return; }
 
@@ -2155,10 +2939,10 @@ function updateReadout() {
       const grow = op.mode === 'push' ? proc >= 0 : proc < 0;
       const p = op.plan || {};
       const act = PROC_LABEL[op.layer] || '시술';
-      // 대상 뼈 이름. 세그먼트가 없는 시술(연골·연조직)은 그 사실을 밝힙니다.
+      // 대상 구조 이름 (뼈·근육·지방구획). 지정이 없는 시술은 그 사실을 밝힙니다.
       const bones = (op.seg || [])
-        .map(id => BONE_SEGMENTS.find(S => S.id === id))
-        .filter(Boolean).map(S => S.ko).join(' · ');
+        .map(id => PART_BY_ID.get(id))
+        .filter(Boolean).map(P => P.ko).join(' · ');
       return `
         <div class="plan">
           <div class="ph"><b>${op.note}</b><span class="pl">${LAYER_LABEL[op.layer] || ''}</span></div>
@@ -2174,14 +2958,15 @@ function updateReadout() {
     });
 
   readoutEl.innerHTML =
-    (items.length ? items.join('') : '<div class="pd">조작된 항목이 없습니다.</div>') + NOTICE;
+    (items.length ? items.join('') : '<div class="pd">조작된 항목이 없습니다.</div>')
+    + agingBlock() + NOTICE;
 }
 
 // ── 활성화 ──────────────────────────────────────────────────
 function enableUI(on) {
   for (const id in opRows) opRows[id].row.classList.toggle('enabled', on);
   for (const id of ['btnBefore', 'btnReset', 'btnSave', 'btnNew',
-                    'tgRegion', 'tgPoints', 'tgLines']) {
+                    'tgRegion', 'tgPoints', 'tgLines', 'inAge', 'inYears']) {
     document.getElementById(id).disabled = !on;
   }
   updateReadout();
@@ -2211,6 +2996,9 @@ function showBefore(on) {
   if (state.showBefore === on) return;
   state.showBefore = on;
   btnBefore.classList.toggle('primary', on);
+  // 노화는 accumulateDisplacement 밖에 있어 여기서 따로 껐다 켜야 합니다.
+  // 층 두께까지 원본으로 돌아가야 뼈 깊이도 원래대로 그려집니다.
+  if (state.years > 0 && state.loaded) { applyAging(); updateThickness(); }
   rebuild();
 }
 btnBefore.addEventListener('pointerdown', () => showBefore(true));
@@ -2224,6 +3012,13 @@ document.getElementById('btnReset').addEventListener('click', () => {
     opRows[op.id].slider.value = 0;
     updateOpLabel(op, opRows[op.id].val, opRows[op.id].der);
   }
+  // 나이는 환자 정보이므로 유지하고, 경과 년수만 지금으로 되돌립니다.
+  state.years = 0;
+  inYears.value = 0;
+  updateAgeLabels();
+  applyAging();
+  updateThickness();
+  updateDisclaimer();
   updateReadout();
   rebuild();
 });
@@ -2245,6 +3040,19 @@ document.getElementById('btnNew').addEventListener('click', () => {
   // 계측점 입력값(anchorOverride)은 사진과 무관하므로 유지합니다. 화면 표시만 끕니다.
   state.markerAnchor = null;
   state.hotSeg = null;
+  // 나이는 환자 정보이므로 사진과 함께 초기화합니다.
+  state.age = 30;
+  state.years = 0;
+  inAge.value = 30;
+  inYears.value = 0;
+  updateAgeLabels();
+  retractMm.fill(0);
+  descentMm.fill(0);
+  // 분류는 사진의 랜드마크 좌표에 의존하므로 비워 둡니다. 남겨 두면 다음 사진이
+  // 오기 전에 그려질 때 옛 사진의 구획이 나옵니다.
+  partOf.forEach(arr => arr?.fill(-1));
+  voidOf.fill(-1);
+  LAYERS.forEach(L => (L.parts || []).forEach(P => P.triCount = 0));
   refreshAnchorRows();
   updateMarkers();
   legendEl.innerHTML = '';
