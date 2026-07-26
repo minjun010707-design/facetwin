@@ -2,3 +2,7 @@
 PLAN.md
 .DS_Store
 README.md
+*.command
+*.before-*.html
+*.before-*.command
+*.other-session-*.html
