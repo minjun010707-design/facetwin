@@ -1444,18 +1444,18 @@
       <div class="startAlt"><span>또는</span></div>
       <button id="btnOpenCam">카메라로 촬영</button>
 
-      <div class="startCtCard" aria-label="3D 해부용 CT 입력">
+      <div class="startCtCard" aria-label="3D 해부 모델 선택">
         <div>
-          <b>3D 해부 필수 · CT/nnU-Net 결과</b>
-          <p>환자 CT를 넣으면 골격·근육을 그 사람의 분할 mesh로 봅니다. 넣지 않으면 샘플 CT를 계측점에 정합해 해부 구조의 배치만 참고합니다.</p>
+          <b>개인 CT 기반 3D 해부 모델</b>
+          <p>CT 결과가 있으면 실제 골격·근육 구조를 상담 화면에 함께 표시합니다. 파일이 없어도 샘플 모델로 먼저 체험할 수 있습니다.</p>
         </div>
         <input id="startCtFiles" type="file" accept=".dcm,.dicom,.nii,.nii.gz,.nrrd,.mha,.mhd,.zip,.glb,.gltf" multiple hidden>
         <div class="startCtActions">
-          <button id="btnStartCtPick" type="button">CT/결과 선택</button>
-          <button id="btnStartCtSample" type="button">샘플 CT 사용</button>
-          <button id="btnStartCtClear" type="button" disabled>해제</button>
+          <button id="btnStartCtPick" type="button">내 CT 불러오기</button>
+          <button id="btnStartCtSample" type="button">샘플로 체험</button>
+          <button id="btnStartCtClear" type="button" disabled>초기화</button>
         </div>
-        <div id="startCtStatus">CT를 선택하지 않으면 사진 업로드 후 샘플 CT가 자동으로 준비됩니다.</div>
+        <div id="startCtStatus">CT 파일이 없어도 샘플 해부 모델로 먼저 시작할 수 있습니다.</div>
       </div>
 
       <div class="startTrust">
@@ -3027,24 +3027,24 @@ function analyzeCtFiles(fileList) {
   const totalMb = bytes / 1024 / 1024;
   let state = 'unsupported';
   let title = 'CT 입력을 확인할 수 없습니다.';
-  let detail = 'DICOM series, NIfTI/mask, 또는 분할 완료 GLB/GLTF를 선택하세요.';
+  let detail = 'CT 촬영 묶음 또는 3D 결과 파일(GLB/GLTF)을 선택하세요.';
 
   if (mesh) {
     state = 'mesh';
-    title = '분할 mesh를 불러올 수 있습니다.';
-    detail = `${mesh.name} · 환자 CT 기반 골격 모델로 3D 뷰에 올립니다.`;
+    title = '3D 결과 파일을 불러올 수 있습니다.';
+    detail = `${mesh.name} · 환자 CT 기반 3D 해부 모델로 상담 화면에 표시합니다.`;
   } else if (hasVolume) {
     state = 'mask';
     title = '분할 결과 파일로 보입니다.';
-    detail = 'NIfTI/NRRD/MHA mask는 워크스테이션에서 surface mesh(GLB)로 변환한 뒤 불러오세요.';
+    detail = '분할 결과는 병원 워크스테이션에서 GLB/GLTF 형태로 변환한 뒤 불러오세요.';
   } else if (hasDicomSeries) {
     state = 'dicom';
-    title = 'DICOM CT series 구성이 감지되었습니다.';
-    detail = '이 브라우저 화면은 원본 CT를 분할하지 않습니다. nnU-Net 서버로 전송하지 않고 로컬 워크스테이션에서 분할한 뒤 GLB를 가져오세요.';
+    title = 'CT 촬영 묶음이 감지되었습니다.';
+    detail = '이 화면에서는 원본 CT를 직접 처리하지 않습니다. 병원 워크스테이션에서 3D 결과 파일로 만든 뒤 불러오세요.';
   } else if (counts.dicom > 0) {
     state = 'partial';
     title = 'DICOM 파일 수가 적습니다.';
-    detail = '얼굴 CT series 전체가 필요합니다. 일부 slice만 있으면 3D 모델링 품질을 판단할 수 없습니다.';
+    detail = '얼굴 CT 촬영 묶음 전체가 필요합니다. 일부 파일만 있으면 3D 모델 품질을 판단하기 어렵습니다.';
   }
 
   return { files, counts, totalMb, mesh, state, title, detail };
@@ -3055,10 +3055,10 @@ function ctPipelinePlan(analysis) {
     : analysis.counts.nifti || analysis.counts.mask ? 'segmentation volume' : 'mesh';
   return {
     input,
-    segmentation: 'nnU-Net worker: skull / mandible / maxilla / teeth / canal labels',
-    meshing: 'connected components cleanup → marching cubes → smoothing ≤0.4mm → GLB export',
-    review: 'surgeon/radiologist approval before surgical planning',
-    appImport: 'GLB loaded as consultation reference model, not outcome prediction',
+    segmentation: 'CT 구조 분할',
+    meshing: '3D 결과 파일 변환',
+    review: '의료진 검수',
+    appImport: '상담 참고 모델로 불러오기',
   };
 }
 
@@ -3092,7 +3092,7 @@ function syncPeelButtons(peel = state.peel) {
 function showCtRequiredNotice() {
   setCtStatus(
     '<b>3D 모델은 CT 입력 후 사용할 수 있습니다.</b><br>'
-    + '사진 업로드 시 CT가 없으면 샘플 CT가 자동 적용됩니다. 이후에는 CT/결과 선택으로 환자 mesh를 교체할 수 있습니다.',
+    + 'CT 파일이 없으면 샘플 모델로 먼저 확인할 수 있습니다. 이후 내 CT 불러오기로 환자 모델을 교체할 수 있습니다.',
     'warn'
   );
   viewHintEl.textContent = '3D 해부 모델은 CT가 준비된 뒤 열립니다.';
@@ -3111,7 +3111,7 @@ function syncCtDependentUi() {
     modelBtn.disabled = !state.loaded || !ctReady;
     modelBtn.title = ctReady
       ? 'CT 기반 3D 해부 모델 보기'
-      : '사진 업로드 시 샘플 CT가 자동 준비됩니다. 해제한 경우 CT/결과 선택 또는 샘플 실행을 눌러 다시 준비하세요.';
+      : 'CT 파일이 없으면 샘플 모델로 먼저 확인할 수 있습니다. 내 CT 불러오기 또는 샘플로 체험을 선택하세요.';
   }
 
   [...segPeel.children].forEach(btn => {
@@ -3160,7 +3160,7 @@ function queueCtSample() {
   pendingCtInput.type = 'sample';
   pendingCtInput.analysis = null;
   pendingCtInput.mesh = null;
-  setStartCtStatus('<b>샘플 CT 준비됨</b><br>사진 업로드가 먼저 필요합니다. 시작 화면은 표면 얼굴로 열리고, 3D 해부 레이어는 CT 샘플 기준으로 표시됩니다.', 'good');
+  setStartCtStatus('<b>샘플 해부 모델 준비됨</b><br>사진을 올리면 얼굴 화면이 먼저 열리고, 해부 탭에서 샘플 구조를 확인할 수 있습니다.', 'good');
   syncCtClearButtons();
 }
 
@@ -3169,7 +3169,7 @@ function ensureInitialCtInput() {
   pendingCtInput.type = 'sample';
   pendingCtInput.analysis = null;
   pendingCtInput.mesh = null;
-  setStartCtStatus('<b>샘플 CT 자동 적용</b><br>직접 선택한 CT가 없어 샘플 CT를 준비했습니다.', 'good');
+  setStartCtStatus('<b>샘플 해부 모델 적용</b><br>CT 파일 없이도 상담 흐름을 볼 수 있도록 샘플 모델을 준비했습니다.', 'good');
   return true;
 }
 
@@ -3275,11 +3275,11 @@ function installCtMeshScene(sceneRoot, fileName, analysis, options = {}) {
   }
   setCtStatus(
     activate
-      ? `<b>CT 기반 완성 3D 모델 로드됨</b><br>${fileName}<br>`
-        + '골격 mesh 위에 근육·SMAS·지방층·진피 직전면까지 통합 표시합니다. '
+      ? `<b>개인 3D 해부 모델 로드됨</b><br>${fileName}<br>`
+        + '골격 위에 근육·지방층·피부층을 함께 표시합니다. '
         + '연조직 세부층은 데모용 구성이며 의료진 검수 전 환자별 자동분할 결과로 보지 않습니다.'
-      : `<b>CT mesh 준비됨</b><br>${fileName}<br>`
-        + '사진 표면 화면으로 시작합니다. 해부 탭에서 CT 모델을 선택하면 확인할 수 있습니다.',
+      : `<b>3D 결과 파일 준비됨</b><br>${fileName}<br>`
+        + '사진 표면 화면으로 시작합니다. 해부 탭에서 3D 해부 모델을 선택하면 확인할 수 있습니다.',
     'good'
   );
 }
@@ -3288,23 +3288,23 @@ async function loadSampleCtMesh(options = {}) {
   const activate = options.activate !== false;
   clearCtModel();
   if (!anatomy.ready && anatomyLoadPromise) {
-    setCtStatus('<b>해부 템플릿을 얼굴 좌표에 정합하는 중입니다.</b><br>데모 CT 모델은 raw GLB가 아니라 landmark 정합 모델로 표시합니다.', 'warn');
+    setCtStatus('<b>샘플 해부 모델을 준비하는 중입니다.</b><br>얼굴 화면과 자연스럽게 맞춰 상담용 3D 구조를 표시합니다.', 'warn');
     await anatomyLoadPromise.catch(() => {});
   }
   if (!anatomy.ready) {
     throw new Error(anatomy.error || '해부 템플릿을 아직 불러오지 못했습니다.');
   }
   const analysis = {
-    files: [{ name: 'sample-ct-aligned-complete-model.glb', size: 0 }],
+    files: [{ name: 'sample-anatomy-model.glb', size: 0 }],
     counts: { dicom: 0, nifti: 0, mask: 0, mesh: 1, other: 0 },
     totalMb: 0,
     mesh: null,
     state: 'mesh',
-    title: '예시 CT 정합 완료 모델',
-    detail: 'CT 골격 결과가 얼굴 landmark에 정합된 뒤 연조직층까지 통합된 데모 상태입니다.',
+    title: '샘플 3D 해부 모델',
+    detail: '골격·근육·피부층을 함께 볼 수 있는 데모 상태입니다.',
     sample: true,
   };
-  ctModel.fileName = 'sample-ct-aligned-complete-model.glb';
+  ctModel.fileName = 'sample-anatomy-model.glb';
   ctModel.analysis = analysis;
   ctModel.ready = true;
   ctModel.virtual = true;
@@ -3320,11 +3320,10 @@ async function loadSampleCtMesh(options = {}) {
   }
   setCtStatus(
     activate
-      ? '<b>데모 CT 기반 완성 3D 모델</b><br>'
-        + '얼굴 landmark에 정합된 골격·근육 mesh 위에 SMAS·심부/천층 지방·진피 직전면을 함께 올렸습니다. '
-        + 'raw CT mesh를 단순 배치하지 않으므로 표면 좌표계와 같은 위치에서 표시됩니다.'
-      : '<b>샘플 CT 준비됨</b><br>'
-        + '사진 표면 화면으로 시작합니다. 3D 모델 버튼과 해부 레이어에서 샘플 CT 기준 모델을 확인할 수 있습니다.',
+      ? '<b>샘플 3D 해부 모델</b><br>'
+        + '골격·근육·피부층을 함께 보여 상담 흐름을 체험할 수 있습니다.'
+      : '<b>샘플 해부 모델 준비됨</b><br>'
+        + '사진 표면 화면으로 시작합니다. 3D 모델 버튼과 해부 레이어에서 샘플 구조를 확인할 수 있습니다.',
     'good'
   );
 }
@@ -3339,8 +3338,8 @@ async function applyCtAnalysis(analysis, options = {}) {
     await loadCtMeshFile(analysis.mesh, analysis, { activate });
     setStartCtStatus(
       activate
-        ? `<b>CT mesh 적용 완료</b><br>${analysis.mesh.name}`
-        : `<b>CT mesh 준비 완료</b><br>${analysis.mesh.name}<br>사진 표면 화면으로 시작합니다.`,
+        ? `<b>3D 해부 모델 적용 완료</b><br>${analysis.mesh.name}`
+        : `<b>3D 해부 모델 준비 완료</b><br>${analysis.mesh.name}<br>사진 표면 화면으로 시작합니다.`,
       'good'
     );
   } else {
@@ -3349,13 +3348,13 @@ async function applyCtAnalysis(analysis, options = {}) {
     const tone = analysis.state === 'dicom' || analysis.state === 'mask' ? 'warn' : 'error';
     setCtStatus(
       `<b>${analysis.title}</b><br>${summary}<br>${analysis.detail}<br>`
-      + `<span>다음 단계: ${plan.segmentation} → ${plan.meshing}</span>`,
+      + `<span>다음 단계: ${plan.segmentation} 후 ${plan.meshing}</span>`,
       tone
     );
     setStartCtStatus(
       `<b>${analysis.title}</b><br>${summary}<br>`
       + (tone === 'warn'
-        ? '원본/마스크는 확인했습니다. 완성 3D 표시에는 분할 GLB가 필요합니다.'
+        ? '원본/분할 파일은 확인했습니다. 상담 화면 표시에는 3D 결과 파일이 필요합니다.'
         : analysis.detail),
       tone
     );
@@ -3374,8 +3373,8 @@ async function applyPendingCtInput(options = {}) {
   if (pendingType === 'sample') {
     setCtStatus(
       activate
-        ? '<b>데모 CT 기반 완성 3D 모델을 구성하는 중입니다.</b><br>얼굴 landmark 정합 모델로 골격·근육·연조직층을 통합합니다.'
-        : '<b>샘플 CT를 준비하는 중입니다.</b><br>사진 표면 화면으로 시작하고, CT 모델은 해부 탭에서 확인할 수 있습니다.',
+        ? '<b>샘플 3D 해부 모델을 준비하는 중입니다.</b><br>골격·근육·피부층을 상담 화면에서 함께 볼 수 있게 구성합니다.'
+        : '<b>샘플 해부 모델을 준비하는 중입니다.</b><br>사진 표면 화면으로 시작하고, 3D 해부 모델은 해부 탭에서 확인할 수 있습니다.',
       'warn'
     );
     await loadSampleCtMesh({ activate });
@@ -5678,14 +5677,14 @@ function applyPeel() {
         '<b>표면</b> — 업로드한 사진을 얼굴 형상에 입힌 회전 가능한 3D 모델입니다.';
     } else if (state.peel === 'bone') {
       peelHintEl.innerHTML =
-        `<b>골격</b> — ${ctModel.virtual ? '샘플 CT 정합 골격' : `환자 CT 분할 mesh <b>${ctModel.fileName}</b>`}를 표시합니다. `
-        + '기존 사진 추정 골격 껍질은 숨기고 CT 기준 모델만 사용합니다.';
+        `<b>골격</b> — ${ctModel.virtual ? '샘플 골격 모델' : `환자 CT 기반 3D 모델 <b>${ctModel.fileName}</b>`}을 표시합니다. `
+        + '사진으로 추정한 골격 대신 CT 기준 구조를 우선 사용합니다.';
     } else if (state.peel === 'muscle') {
       peelHintEl.innerHTML =
         '<b>근육</b> — 골격 위에 근육만 누적해 표시합니다. '
         + (ctModel.virtual
-          ? '샘플에서는 정합 근육 mesh를 함께 표시합니다.'
-          : '환자별 실제 근육 자동분할 GLB가 있으면 같은 CT mesh 파일 안의 레이어로 확장됩니다.');
+          ? '샘플 근육 모델을 함께 표시합니다.'
+          : '환자별 근육 3D 결과가 있으면 같은 화면에서 함께 확인할 수 있습니다.');
     } else if (state.peel === 'dermis') {
       peelHintEl.innerHTML =
         '<b>진피</b> — 골격 + 근육 + 진피를 누적해 표시합니다. 표피와 사진 표면은 숨깁니다.';
@@ -5769,18 +5768,17 @@ function applyPeel() {
       '<b>표면</b> — 업로드한 사진을 얼굴 형상에 입힌 회전 가능한 3D 모델입니다.';
   } else if (!on) {
     peelHintEl.innerHTML =
-      '3D 해부 레이어는 CT 또는 샘플 CT가 준비된 뒤 표시합니다. CT 없는 추정 레이어로 대체하지 않습니다.';
+      '3D 해부 레이어는 내 CT 또는 샘플 모델이 준비된 뒤 표시합니다. 사진만으로 뼈 구조를 단정하지 않습니다.';
   } else if (pi === BONE_LI && patientCtBone) {
     peelHintEl.innerHTML =
-      `<b>골격</b> — 환자 CT 기반 분할 mesh <b>${ctModel.fileName}</b>를 표시합니다. `
+      `<b>골격</b> — 환자 CT 기반 3D 모델 <b>${ctModel.fileName}</b>을 표시합니다. `
       + '이 모델은 수술 결과 예측이 아니라 의료진 검수용 해부 참고 모델입니다. '
       + '정합 위치와 분할 경계는 원본 CT에서 반드시 확인해야 합니다.';
   } else if (pi === BONE_LI && realBone) {
     peelHintEl.innerHTML =
-      `<b>골격</b> — 샘플 CT 정합 골격 mesh를 계측점 `
-      + `${anatomy.ctrl.length}쌍으로 환자 얼굴에 맞춘 것입니다. `
+      `<b>골격</b> — 샘플 골격 모델을 얼굴 위치에 맞춰 표시합니다. `
       + '안와·비강·치아·하악각은 <b>그려 넣은 것이 아니라 원래 있는 구조</b>입니다. '
-      + '다만 실제 환자 CT가 아니라 샘플 CT 데모입니다.';
+      + '다만 실제 환자 CT가 아니라 샘플 데모입니다.';
   } else if (pi === BONE_LI) {
     const shown = BONE_SEGMENTS.filter(S => (S.triCount ?? 0) > 0).length;
     peelHintEl.innerHTML =
@@ -6817,25 +6815,25 @@ function ctBlock() {
         `${analysis.totalMb.toFixed(1)} MB`,
         counts.dicom ? `DICOM ${counts.dicom}` : '',
         counts.nifti ? `NIfTI ${counts.nifti}` : '',
-        counts.mask ? `mask ${counts.mask}` : '',
-        counts.mesh ? `mesh ${counts.mesh}` : '',
+        counts.mask ? `분할 파일 ${counts.mask}` : '',
+        counts.mesh ? `3D 결과 ${counts.mesh}` : '',
       ].filter(Boolean).join(' · ')
-    : '분할 mesh 로드';
+    : '3D 결과 파일 로드';
   return `
     <div class="plan">
       <div class="ph"><b>${state.preSurfaceSample ? 'CT 기반 완성 3D 모델' : 'CT 기반 해부 모델'}</b><span class="pl">의사용</span></div>
       <div class="summaryGrid">
-        <div class="summaryMetric"><span>상태</span><b>${ctModel.ready ? 'mesh 로드' : '준비'}</b></div>
-        <div class="summaryMetric"><span>기준</span><b>${ctModel.ready ? (ctModel.virtual ? '랜드마크 정합 데모' : 'CT 골격 mesh') : '외부 분할 필요'}</b></div>
+        <div class="summaryMetric"><span>상태</span><b>${ctModel.ready ? '3D 모델 로드' : '준비'}</b></div>
+        <div class="summaryMetric"><span>기준</span><b>${ctModel.ready ? (ctModel.virtual ? '샘플 해부 모델' : '환자 CT 모델') : '3D 결과 필요'}</b></div>
         <div class="summaryMetric"><span>용도</span><b>${state.preSurfaceSample ? '통합 모델링' : '해부 참고'}</b></div>
       </div>
       ${summaryRows([
         ['파일', ctModel.fileName || summary],
-        ['파이프라인', 'DICOM/NIfTI → nnU-Net 분할 → mesh 변환 → 골격 정합 → 근육·SMAS·지방층·진피 직전면 통합'],
+        ['흐름', 'CT 확인 → 3D 결과 파일 생성 → 골격·근육·피부층을 상담 화면에 표시'],
         ['범위', state.preSurfaceSample
           ? (ctModel.virtual
-            ? '데모 샘플은 raw CT mesh를 단순 배치하지 않고 얼굴 landmark에 정합된 해부 템플릿으로 완성 모델 좌표계를 보여줍니다.'
-            : '불러온 CT 골격 mesh 위에 연조직층을 함께 표시합니다. 연조직층은 실제 환자별 자동분할 검증 전 단계입니다.')
+            ? '샘플 모델은 상담 흐름을 보여주기 위한 예시입니다. 실제 수술 판단에는 환자 CT 확인이 필요합니다.'
+            : '불러온 환자 CT 모델 위에 상담용 피부층을 함께 표시합니다. 최종 판단은 의료진 검수 기준으로 진행합니다.')
           : '골격 참고 정확도를 높이기 위한 모델이며, 수술 결과나 부작용 발생을 예측하지 않습니다.', 'quiet'],
       ])}
     </div>`;
@@ -6849,12 +6847,12 @@ function preSurfaceBlock() {
       <div class="summaryGrid">
         <div class="summaryMetric"><span>깊이</span><b>골격→진피 직전</b></div>
         <div class="summaryMetric"><span>표시</span><b>${PRE_SURFACE_SAMPLE_LAYERS.length}개 층</b></div>
-        <div class="summaryMetric"><span>기준</span><b>${ctModel.ready ? (ctModel.virtual ? '정합 골격·근육 + 연조직층' : 'CT 골격 + 연조직층') : '템플릿 + 연조직층'}</b></div>
+        <div class="summaryMetric"><span>기준</span><b>${ctModel.ready ? (ctModel.virtual ? '샘플 골격·근육 + 피부층' : 'CT 골격 + 피부층') : '샘플 구조 + 피부층'}</b></div>
       </div>
       ${summaryRows([
         ['구성', PRE_SURFACE_SAMPLE_LAYERS.map(L => L.label).join(' · ')],
-        ['목적', 'CT 후처리 골격 모델이 얼굴 좌표에 정합된 뒤 근육·SMAS·지방층·진피 직전면까지 이어지는 완성 모델 데모입니다.'],
-        ['범위', '현재 데모의 연조직 세부층은 CT에서 실제 자동분할된 환자별 결과가 아니며, 임상 적용 전에는 별도 학습·검수·정합 검증이 필요합니다.', 'quiet'],
+        ['목적', '골격 기준 위에 근육·지방층·피부층을 함께 올려 상담 중 구조 관계를 설명합니다.'],
+        ['범위', '현재 데모의 피부층은 상담용 시각화입니다. 실제 수술 계획에는 환자 CT와 의료진 검수가 필요합니다.', 'quiet'],
       ])}
     </div>`;
 }
@@ -6969,9 +6967,9 @@ function enableUI(on) {
     document.getElementById(id).disabled = !on;
   }
   syncCtClearButtons();
-  if (!on) setCtStatus('사진을 불러오면 CT 입력 워크플로를 사용할 수 있습니다.');
+  if (!on) setCtStatus('사진을 불러오면 3D 해부 모델을 함께 볼 수 있습니다.');
   else if (!ctModel.ready && !ctModel.analysis) {
-    setCtStatus('<b>3D 해부 모델 대기 중</b><br>처음 업로드에서 CT가 없으면 샘플 CT가 자동 적용됩니다. 해제한 경우 CT/결과 선택 또는 샘플 실행으로 다시 준비하세요.', 'warn');
+    setCtStatus('<b>3D 해부 모델 대기 중</b><br>CT 파일이 있으면 실제 구조를 불러오고, 없으면 샘플 모델로 상담 화면을 확인할 수 있습니다.', 'warn');
   }
   syncCtDependentUi();
   updateAdverseControls();
@@ -6988,7 +6986,7 @@ btnStartCtSample.addEventListener('click', async () => {
     queueCtSample();
     return;
   }
-  setCtStatus('<b>데모 CT 기반 완성 3D 모델을 구성하는 중입니다.</b><br>얼굴 landmark 정합 모델로 골격·근육·연조직층을 통합합니다.', 'warn');
+  setCtStatus('<b>샘플 해부 모델을 준비하는 중입니다.</b><br>골격·근육·피부층을 상담 화면에서 함께 볼 수 있게 구성합니다.', 'warn');
   try {
     await loadSampleCtMesh();
     updateReadout();
@@ -7019,10 +7017,10 @@ btnStartCtClear.addEventListener('click', () => {
   clearCtModel();
   applyPeel();
   updateReadout();
-  setStartCtStatus('CT를 선택하지 않으면 사진 업로드 후 샘플 CT가 자동으로 준비됩니다.');
+  setStartCtStatus('CT 파일이 없어도 샘플 해부 모델로 먼저 시작할 수 있습니다.');
   setCtStatus(state.loaded
-    ? '<b>CT 입력을 해제했습니다.</b><br>현재 사진에서는 3D 해부 레이어가 잠깁니다. 샘플 실행 또는 CT/결과 선택으로 다시 열 수 있습니다.'
-    : '사진을 불러오면 CT 입력 워크플로를 사용할 수 있습니다.', state.loaded ? 'warn' : '');
+    ? '<b>3D 해부 모델을 초기화했습니다.</b><br>샘플로 체험하거나 내 CT를 불러와 다시 확인할 수 있습니다.'
+    : '사진을 불러오면 3D 해부 모델을 함께 볼 수 있습니다.', state.loaded ? 'warn' : '');
   syncCtClearButtons();
 });
 // ── 보기 모드 전환 ──────────────────────────────────────────
@@ -7146,7 +7144,7 @@ document.getElementById('btnNew').addEventListener('click', () => {
   preSurfaceGroup.visible = false;
   clearPendingCtInput();
   clearCtModel();
-  setStartCtStatus('CT를 선택하지 않으면 사진 업로드 후 샘플 CT가 자동으로 준비됩니다.');
+  setStartCtStatus('CT 파일이 없어도 샘플 해부 모델로 먼저 시작할 수 있습니다.');
   // 마지막 사진과 노화 텍스처를 즉시 해제해 새 사진 대기 화면에서 GPU 메모리를 잡지 않습니다.
   if (materials.photo.map) materials.photo.map.dispose();
   materials.photo.map = null;
@@ -7350,11 +7348,11 @@ anatomyLoadPromise = loadAnatomy()
     el.innerHTML = location.protocol === 'file:'
       ? '<b>샘플 CT 해부 에셋을 불러오지 못했습니다.</b><br>'
         + '브라우저가 <code>file://</code> 페이지의 보조 파일 읽기를 막을 수 있습니다. '
-        + '3D 해부 모델은 CT/분할 mesh 또는 샘플 CT가 준비된 경우에만 표시됩니다.<br>'
+        + '3D 해부 모델은 내 CT 또는 샘플 모델이 준비된 경우에만 표시됩니다.<br>'
         + '프로젝트 폴더의 <b>「시뮬레이터 열기.command」</b>를 더블클릭해 여십시오. '
         + '(또는 터미널에서)<br><code>node .claude/serve.mjs</code>'
       : `<b>샘플 CT 해부 에셋을 불러오지 못했습니다.</b><br>${anatomy.error}<br>`
-        + '환자 CT 분할 GLB/GLTF는 계속 불러올 수 있습니다.';
+        + '환자 CT 기반 3D 결과 파일은 계속 불러올 수 있습니다.';
     el.hidden = false;
   })
   .finally(() => { if (state.loaded) applyPeel(); });
