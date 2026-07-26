@@ -541,10 +541,13 @@
   </main>
 
 <script>
+const isFilePreview = location.protocol === 'file:';
 const isLocalPreview = ['localhost', '127.0.0.1'].includes(location.hostname) && location.port !== '8123';
-const simulatorUrl = isLocalPreview
-  ? 'http://localhost:8123/simulator.html'
-  : 'simulator.html';
+const simulatorUrl = isFilePreview
+  ? 'https://minjun010707-design.github.io/facetwin/simulator.html'
+  : isLocalPreview
+    ? 'http://localhost:8123/simulator.html'
+    : 'simulator.html';
 document.querySelectorAll('[data-simulator-link]').forEach(link => {
   link.href = simulatorUrl;
 });
